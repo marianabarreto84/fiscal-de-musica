@@ -16,10 +16,21 @@ LASTFM_API = "https://ws.audioscrobbler.com/2.0/"
 def _lfm(params: dict, _retries: int = 5) -> dict:
     params.update({"api_key": LASTFM_API_KEY, "format": "json"})
     for attempt in range(_retries):
-        r = httpx.get(LASTFM_API, params=params, timeout=15)
+        try:
+            r = httpx.get(LASTFM_API, params=params, timeout=15)
+        except httpx.RequestError as e:
+            wait = 10 * (attempt + 1)
+            print(f"[sync] erro de rede ({e!r}) — aguardando {wait}s (tentativa {attempt+1}/{_retries})", flush=True)
+            time.sleep(wait)
+            continue
         if r.status_code == 429:
             wait = 10 * (attempt + 1)
             print(f"[sync] 429 rate limit — aguardando {wait}s (tentativa {attempt+1}/{_retries})", flush=True)
+            time.sleep(wait)
+            continue
+        if 500 <= r.status_code < 600:
+            wait = 10 * (attempt + 1)
+            print(f"[sync] {r.status_code} do Last.fm — aguardando {wait}s (tentativa {attempt+1}/{_retries})", flush=True)
             time.sleep(wait)
             continue
         r.raise_for_status()
@@ -32,7 +43,7 @@ def _lfm(params: dict, _retries: int = 5) -> dict:
                 continue
             raise HTTPException(400, f"Last.fm: {data.get('message', data['error'])}")
         return data
-    raise HTTPException(429, "Last.fm rate limit — tente novamente em alguns minutos")
+    raise HTTPException(503, "Last.fm indisponível após várias tentativas — tente novamente em alguns minutos")
 
 
 def _get_config(conn, key: str) -> Optional[str]:
@@ -195,6 +206,53 @@ def _download_image(url: str, dest: Path) -> bool:
     except Exception:
         pass
     return False
+
+
+_ALLOWED_IMG_EXTS = {"jpg", "jpeg", "png", "webp", "gif"}
+
+
+def _ext_from_url(url: str) -> str:
+    tail = url.rsplit("/", 1)[-1].split("?", 1)[0]
+    ext = tail.rsplit(".", 1)[-1].lower() if "." in tail else ""
+    return ext if ext in _ALLOWED_IMG_EXTS else "jpg"
+
+
+def replace_image_from_url(conn, tipo: str, entity_id: str, url: str) -> str:
+    """Baixa imagem da URL, salva como {tipo}/{id}-{ts}.{ext}, atualiza DB e
+    remove o arquivo antigo. Retorna o novo image_path."""
+    if tipo not in ("artistas", "albums"):
+        raise HTTPException(400, "tipo inválido")
+    if not url or not url.strip():
+        raise HTTPException(400, "URL obrigatória")
+
+    table = "musicas.artista" if tipo == "artistas" else "musicas.album"
+    row = conn.execute(
+        f"SELECT image_path FROM {table} WHERE id = %s::uuid", (entity_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(404, "registro não encontrado")
+
+    ext = _ext_from_url(url)
+    ts = int(time.time())
+    rel = f"{tipo}/{entity_id}-{ts}.{ext}"
+    dest = IMAGES_DIR / rel
+
+    if not _download_image(url.strip(), dest):
+        raise HTTPException(400, "Não foi possível baixar a imagem dessa URL")
+
+    old = row["image_path"]
+    conn.execute(
+        f"UPDATE {table} SET image_path = %s WHERE id = %s::uuid",
+        (rel, entity_id),
+    )
+
+    if old and old != rel:
+        try:
+            (IMAGES_DIR / old).unlink(missing_ok=True)
+        except Exception:
+            pass
+
+    return rel
 
 
 def _pick_image(images: list) -> str:

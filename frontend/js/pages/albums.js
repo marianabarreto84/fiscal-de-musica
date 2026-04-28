@@ -80,9 +80,14 @@ async function openAlbum(id) {
             <div style="font-size:12px;color:var(--accent);margin-top:4px">${al.total_plays.toLocaleString('pt-BR')} plays</div>
           </div>
         </div>
-        <button class="btn-icon" onclick="modal.hide()">
-          <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
-        </button>
+        <div style="display:flex;gap:6px">
+          <button class="btn-icon" title="Trocar imagem" onclick="changeAlbumImage('${al.id}')">
+            <svg viewBox="0 0 24 24"><path d="M3 17.25V21h3.75L17.81 9.94l-3.75-3.75L3 17.25zM20.71 7.04a1 1 0 0 0 0-1.41l-2.34-2.34a1 1 0 0 0-1.41 0l-1.83 1.83 3.75 3.75 1.83-1.83z"/></svg>
+          </button>
+          <button class="btn-icon" onclick="modal.hide()">
+            <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+          </button>
+        </div>
       </div>
       <div class="modal-body">
         ${al.faixas.length ? `
@@ -104,5 +109,24 @@ async function openAlbum(id) {
     `);
   } catch (e) {
     modal.show(`<div class="modal-body"><div class="text-muted">Erro: ${e.message}</div></div>`);
+  }
+}
+
+async function changeAlbumImage(id) {
+  const url = await modal.prompt({
+    title: 'Trocar imagem do álbum',
+    label: 'URL da nova imagem',
+    placeholder: 'https://...',
+    confirmText: 'Trocar',
+  });
+  if (!url || !url.trim()) { openAlbum(id); return; }
+  try {
+    await api.setAlbumImage(id, url.trim());
+    toast('Imagem atualizada');
+    await openAlbum(id);
+    loadAlbums();
+  } catch (e) {
+    toast('Erro ao trocar imagem: ' + e.message, 'error');
+    openAlbum(id);
   }
 }

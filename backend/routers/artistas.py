@@ -1,8 +1,14 @@
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 from typing import Optional
 from backend.db import get_db
+from backend.routers.lastfm import replace_image_from_url
 
 router = APIRouter()
+
+
+class ImageUrlBody(BaseModel):
+    url: str
 
 
 @router.get("")
@@ -46,6 +52,13 @@ def list_artistas(
     ]
 
 
+@router.put("/{artista_id}/image")
+def set_artista_image(artista_id: str, body: ImageUrlBody):
+    with get_db() as conn:
+        rel = replace_image_from_url(conn, "artistas", artista_id, body.url)
+    return {"ok": True, "image_path": rel}
+
+
 @router.get("/{artista_id}")
 def get_artista(artista_id: str):
     with get_db() as conn:
@@ -54,7 +67,6 @@ def get_artista(artista_id: str):
             (artista_id,),
         ).fetchone()
         if not ar:
-            from fastapi import HTTPException
             raise HTTPException(404, "Artista não encontrado")
 
         top_musicas = conn.execute(

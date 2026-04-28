@@ -1,8 +1,14 @@
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 from typing import Optional
 from backend.db import get_db
+from backend.routers.lastfm import replace_image_from_url
 
 router = APIRouter()
+
+
+class ImageUrlBody(BaseModel):
+    url: str
 
 
 @router.get("")
@@ -49,6 +55,13 @@ def list_albums(
         }
         for r in rows
     ]
+
+
+@router.put("/{album_id}/image")
+def set_album_image(album_id: str, body: ImageUrlBody):
+    with get_db() as conn:
+        rel = replace_image_from_url(conn, "albums", album_id, body.url)
+    return {"ok": True, "image_path": rel}
 
 
 @router.get("/{album_id}")

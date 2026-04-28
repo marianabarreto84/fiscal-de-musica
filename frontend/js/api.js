@@ -37,11 +37,13 @@ const api = {
   getArtistas: (q = '', limit = 100) =>
     api.get(`/artistas?q=${encodeURIComponent(q)}&limit=${limit}`),
   getArtista: (id) => api.get(`/artistas/${id}`),
+  setArtistaImage: (id, url) => api.put(`/artistas/${id}/image`, { url }),
 
   // Álbuns
   getAlbums: (q = '', limit = 100, artistaId = null) =>
     api.get(`/albums?q=${encodeURIComponent(q)}&limit=${limit}${artistaId ? '&artista_id=' + artistaId : ''}`),
   getAlbum: (id) => api.get(`/albums/${id}`),
+  setAlbumImage: (id, url) => api.put(`/albums/${id}/image`, { url }),
 
   // Stats
   getOverview:     ()      => api.get('/stats/overview'),
