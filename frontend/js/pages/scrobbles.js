@@ -162,15 +162,15 @@ function renderScrobbleModal(s, editing) {
     ? `<span style="cursor:pointer;text-decoration:underline" onclick="modal.hide();openAlbum('${s.album.id}')">${escText(s.album.titulo)}</span>${s.album.ano ? ` · ${s.album.ano}` : ''}`
     : '<span class="text-muted">sem álbum</span>';
 
-  const dlIcon = `<svg viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor"/></svg>`;
+  const dlIcon = `<svg viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px;margin-right:6px"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor"/></svg>`;
   const albumImgBtn = (s.album && !s.album.image_path)
-    ? `<button class="btn btn-secondary" onclick="tryDownloadAlbumImage('${s.album.id}','${s.id}')" style="margin-top:6px">${dlIcon}Baixar imagem do álbum</button>`
+    ? `<button class="btn btn-secondary" onclick="tryDownloadAlbumImage('${s.album.id}','${s.id}')">${dlIcon}Baixar imagem do álbum</button>`
     : '';
   const artistaImgBtn = (!s.artista.image_path)
-    ? `<button class="btn btn-secondary" onclick="tryDownloadArtistaImage('${s.artista.id}','${s.id}')" style="margin-top:6px;margin-left:6px">${dlIcon}Baixar imagem do artista</button>`
+    ? `<button class="btn btn-secondary" onclick="tryDownloadArtistaImage('${s.artista.id}','${s.id}')">${dlIcon}Baixar imagem do artista</button>`
     : '';
-  const imageButtons = (albumImgBtn || artistaImgBtn)
-    ? `<div style="margin-top:6px">${albumImgBtn}${artistaImgBtn}</div>`
+  const imageBar = (!editing && (albumImgBtn || artistaImgBtn))
+    ? `<div class="scrobble-image-actions">${albumImgBtn}${artistaImgBtn}</div>`
     : '';
 
   const headerActions = editing
@@ -248,11 +248,11 @@ function renderScrobbleModal(s, editing) {
         <div style="min-width:0;flex:1">
           <div class="modal-title" style="white-space:normal">${escText(s.musica.titulo)}</div>
           <div style="font-size:13px;color:var(--text2);cursor:pointer" onclick="modal.hide();openArtista('${s.artista.id}')">${escText(s.artista.nome)}</div>
-          ${imageButtons}
         </div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0">${headerActions}</div>
     </div>
+    ${imageBar}
     <div class="modal-body">${body}</div>
     ${footer}
   `);
@@ -289,10 +289,55 @@ async function confirmDeleteScrobble(id) {
   }
 }
 
+function promptImageUrl({ contextLabel, searchQuery }) {
+  return new Promise(resolve => {
+    modal._promptResolve = resolve;
+    const safeCtx = escText(contextLabel);
+    const googleHref = `https://www.google.com/search?tbm=isch&q=${encodeURIComponent(searchQuery)}`;
+    modal.show(`
+      <div class="modal-header">
+        <div class="modal-title">Imagem não encontrada no Last.fm</div>
+        <button class="btn-icon" onclick="modal.hide()">
+          <svg viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </div>
+      <div class="modal-body">
+        <div style="font-size:13px;color:var(--text2);margin-bottom:14px">
+          ${safeCtx}
+        </div>
+        <div class="form-group" style="margin-bottom:8px">
+          <label class="form-label">Cole a URL de uma imagem</label>
+          <input class="form-input" id="modal-prompt-input" placeholder="https://...">
+        </div>
+        <a href="${googleHref}" target="_blank" rel="noopener"
+           style="font-size:12px;color:var(--accent);text-decoration:none">
+          Buscar no Google Imagens →
+        </a>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="modal.hide()">Cancelar</button>
+        <button class="btn btn-primary" onclick="modal._promptConfirm()">Baixar</button>
+      </div>
+    `);
+    const input = document.getElementById('modal-prompt-input');
+    setTimeout(() => input && input.focus(), 30);
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); modal._promptConfirm(); }
+    });
+  });
+}
+
 async function _tryDownloadImage({ kind, id, scrobbleId }) {
   const auto = kind === 'album' ? api.downloadAlbumImage : api.downloadArtistaImage;
   const setUrl = kind === 'album' ? api.setAlbumImage : api.setArtistaImage;
-  const labelKind = kind === 'album' ? 'álbum' : 'artista';
+
+  const s = _currentScrobble;
+  const contextLabel = (kind === 'album' && s && s.album)
+    ? `${s.artista.nome} — ${s.album.titulo}`
+    : (s ? s.artista.nome : '');
+  const searchQuery = (kind === 'album' && s && s.album)
+    ? `${s.artista.nome} ${s.album.titulo} album cover`
+    : (s ? `${s.artista.nome} musician` : '');
 
   toast('Buscando imagem no Last.fm...');
   try {
@@ -305,12 +350,7 @@ async function _tryDownloadImage({ kind, id, scrobbleId }) {
     // não achou — cai pro prompt de URL
   }
 
-  const url = await modal.prompt({
-    title: `Imagem do ${labelKind} não encontrada no Last.fm`,
-    label: 'Cole a URL de uma imagem (ou cancele):',
-    placeholder: 'https://...',
-    confirmText: 'Baixar',
-  });
+  const url = await promptImageUrl({ contextLabel, searchQuery });
 
   if (!url || !url.trim()) {
     if (scrobbleId) await openScrobble(scrobbleId);

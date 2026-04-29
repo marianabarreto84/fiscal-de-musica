@@ -316,6 +316,13 @@ canvas { max-width: 100%; }
   font-size: 11px; color: var(--text3); margin-top: 2px;
 }
 
+.scrobble-image-actions {
+  display: flex; gap: 10px; flex-wrap: wrap;
+  padding: 12px 28px; background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+}
+.scrobble-image-actions .btn { flex: 0 1 auto; }
+
 /* ── Range bar ── */
 .diary-range-bar {
   display: flex; align-items: center; gap: 16px;
