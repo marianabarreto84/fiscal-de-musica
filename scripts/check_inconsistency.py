@@ -22,11 +22,18 @@ OK  = "✓"
 WARN = "⚠"
 
 
+def log(msg="", **kwargs):
+    while msg.startswith("\n"):
+        print()
+        msg = msg[1:]
+    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}", **kwargs)
+
+
 # ── checks ────────────────────────────────────────────────────────────────────
 
 def check_sync_status() -> tuple[str | None, int]:
     """Mostra informações sobre o último sync e retorna (username, db_total)."""
-    print("\n[1] Status do último sync")
+    log("\n[1] Status do último sync")
     with get_db() as conn:
         username    = _get_config(conn, "lastfm_username")
         last_ts_str = _get_config(conn, "lastfm_last_sync_ts")
@@ -34,46 +41,46 @@ def check_sync_status() -> tuple[str | None, int]:
         oldest = conn.execute("SELECT MIN(ocorrido_em) AS d FROM musicas.scrobble").fetchone()["d"]
         newest = conn.execute("SELECT MAX(ocorrido_em) AS d FROM musicas.scrobble").fetchone()["d"]
 
-    print(f"  Usuário      : {username or '(não configurado)'}")
-    print(f"  Total no banco: {db_total:,} scrobbles")
+    log(f"  Usuário      : {username or '(não configurado)'}")
+    log(f"  Total no banco: {db_total:,} scrobbles")
     if oldest:
-        print(f"  Primeiro scrobble : {oldest.strftime('%Y-%m-%d')}")
+        log(f"  Primeiro scrobble : {oldest.strftime('%Y-%m-%d')}")
     if newest:
-        print(f"  Último scrobble   : {newest.strftime('%Y-%m-%d %H:%M UTC')}")
+        log(f"  Último scrobble   : {newest.strftime('%Y-%m-%d %H:%M UTC')}")
 
     if last_ts_str:
         dt = datetime.fromtimestamp(int(last_ts_str), tz=timezone.utc)
         age_h = (time.time() - int(last_ts_str)) / 3600
-        print(f"  Último sync  : {dt.strftime('%Y-%m-%d %H:%M UTC')} (há {age_h:.1f}h)")
+        log(f"  Último sync  : {dt.strftime('%Y-%m-%d %H:%M UTC')} (há {age_h:.1f}h)")
         if age_h > 24:
-            print(f"  {WARN} Último sync há mais de 24h — considere rodar o incremental")
+            log(f"  {WARN} Último sync há mais de 24h — considere rodar o incremental")
     else:
-        print(f"  {WARN} Nenhum sync registrado")
+        log(f"  {WARN} Nenhum sync registrado")
 
     return username, db_total
 
 
 def check_total_count(username: str, db_total: int):
     """Compara o total de scrobbles reportado pelo Last.fm com o banco."""
-    print("\n[2] Total de scrobbles (Last.fm vs banco)")
+    log("\n[2] Total de scrobbles (Last.fm vs banco)")
     data = _lfm({"method": "user.getinfo", "user": username})
     lfm_total = int(data.get("user", {}).get("playcount", 0))
     diff = lfm_total - db_total
 
-    print(f"  Last.fm : {lfm_total:,}")
-    print(f"  Banco   : {db_total:,}")
+    log(f"  Last.fm : {lfm_total:,}")
+    log(f"  Banco   : {db_total:,}")
 
     if abs(diff) <= 5:
-        print(f"  {OK} Diferença mínima ({diff:+}) — dentro do esperado")
+        log(f"  {OK} Diferença mínima ({diff:+}) — dentro do esperado")
     elif abs(diff) <= 200:
-        print(f"  {WARN} Diferença de {diff:+,} scrobbles (pode ser o sync ainda em progresso)")
+        log(f"  {WARN} Diferença de {diff:+,} scrobbles (pode ser o sync ainda em progresso)")
     else:
-        print(f"  {WARN} Diferença grande: {diff:+,} scrobbles — considere rodar o from-zero")
+        log(f"  {WARN} Diferença grande: {diff:+,} scrobbles — considere rodar o from-zero")
 
 
 def check_recent_scrobbles(username: str):
     """Verifica se os últimos 200 scrobbles do Last.fm estão no banco."""
-    print("\n[3] Últimos 200 scrobbles do Last.fm no banco")
+    log("\n[3] Últimos 200 scrobbles do Last.fm no banco")
     data = _lfm({
         "method": "user.getrecenttracks",
         "user": username,
@@ -94,7 +101,7 @@ def check_recent_scrobbles(username: str):
             timestamps.append(ts)
 
     if not timestamps:
-        print("  Nenhum scrobble recente retornado pelo Last.fm")
+        log("  Nenhum scrobble recente retornado pelo Last.fm")
         return
 
     placeholders = ",".join(["%s"] * len(timestamps))
@@ -107,24 +114,24 @@ def check_recent_scrobbles(username: str):
     found = {r["lastfm_ts"] for r in rows}
     missing = [ts for ts in timestamps if ts not in found]
 
-    print(f"  Last.fm retornou : {len(timestamps)} scrobbles")
-    print(f"  Presentes no banco: {len(found)}")
+    log(f"  Last.fm retornou : {len(timestamps)} scrobbles")
+    log(f"  Presentes no banco: {len(found)}")
 
     if missing:
-        print(f"  {WARN} Ausentes no banco: {len(missing)}")
+        log(f"  {WARN} Ausentes no banco: {len(missing)}")
         for ts in missing[:5]:
             dt = datetime.fromtimestamp(ts, tz=timezone.utc)
-            print(f"    - {dt.strftime('%Y-%m-%d %H:%M:%S UTC')} (ts={ts})")
+            log(f"    - {dt.strftime('%Y-%m-%d %H:%M:%S UTC')} (ts={ts})")
         if len(missing) > 5:
-            print(f"    ... e mais {len(missing) - 5}")
-        print("  Dica: rode o incremental para buscar scrobbles faltando")
+            log(f"    ... e mais {len(missing) - 5}")
+        log("  Dica: rode o incremental para buscar scrobbles faltando")
     else:
-        print(f"  {OK} Todos presentes no banco")
+        log(f"  {OK} Todos presentes no banco")
 
 
 def check_db_integrity():
     """Verifica integridade interna: orphans, duplicatas, dados faltando."""
-    print("\n[4] Integridade interna do banco")
+    log("\n[4] Integridade interna do banco")
     issues = []
 
     with get_db() as conn:
@@ -178,16 +185,16 @@ def check_db_integrity():
 
     if issues:
         for msg in issues:
-            print(msg)
+            log(msg)
     else:
-        print(f"  {OK} Nenhuma inconsistência encontrada")
+        log(f"  {OK} Nenhuma inconsistência encontrada")
 
 
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main():
     if not LASTFM_API_KEY:
-        print("Erro: LAST_FM_API_KEY não configurada no .env")
+        log("Erro: LAST_FM_API_KEY não configurada no .env")
         sys.exit(1)
 
     username = sys.argv[1] if len(sys.argv) > 1 else None
@@ -195,10 +202,10 @@ def main():
         with get_db() as conn:
             username = _get_config(conn, "lastfm_username")
     if not username:
-        print("Erro: informe o username do Last.fm como argumento.")
+        log("Erro: informe o username do Last.fm como argumento.")
         sys.exit(1)
 
-    print(f"[check] verificando inconsistências — usuário: {username}")
+    log(f"[check] verificando inconsistências — usuário: {username}")
 
     username_db, db_total = check_sync_status()
     check_total_count(username, db_total)
@@ -206,7 +213,7 @@ def main():
     check_recent_scrobbles(username)
     check_db_integrity()
 
-    print("\n[check] concluído!")
+    log("\n[check] concluído!")
 
 
 if __name__ == "__main__":

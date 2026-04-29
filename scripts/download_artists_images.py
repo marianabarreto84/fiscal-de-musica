@@ -6,6 +6,7 @@ Uso: poetry run python scripts/download_artists_images.py [--limit N]
 import sys
 import time
 import unicodedata
+from datetime import datetime
 
 import httpx
 
@@ -15,6 +16,13 @@ from backend.config import IMAGES_DIR
 from backend.db import get_db
 
 DEEZER_API = "https://api.deezer.com/search/artist"
+
+
+def log(msg="", **kwargs):
+    while msg.startswith("\n"):
+        print()
+        msg = msg[1:]
+    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}", **kwargs)
 
 
 def _normalizar(texto: str) -> str:
@@ -70,7 +78,7 @@ def main():
         try:
             limit = int(sys.argv[idx + 1])
         except (IndexError, ValueError):
-            print("Uso: poetry run python scripts/download_artists_images.py [--limit N]")
+            log("Uso: poetry run python scripts/download_artists_images.py [--limit N]")
             sys.exit(1)
 
     with get_db() as conn:
@@ -80,22 +88,22 @@ def main():
         ).fetchall()
 
     total = len(artistas)
-    print(f"[artistas] {total} artistas sem imagem")
+    log(f"[artistas] {total} artistas sem imagem")
 
     ok = 0
     for i, ar in enumerate(artistas, 1):
         with get_db() as conn:
             result = _baixar_imagem_artista(conn, str(ar["id"]), ar["nome"])
         status = "ok" if result else "sem imagem"
-        print(f"  [{i}/{total}] {ar['nome']} — {status}", flush=True)
+        log(f"  [{i}/{total}] {ar['nome']} — {status}", flush=True)
         if result:
             ok += 1
         time.sleep(0.25)
 
-    print(f"\n[artistas] concluído!")
-    print(f"  baixados             : {ok}/{total}")
+    log(f"\n[artistas] concluído!")
+    log(f"  baixados             : {ok}/{total}")
     if total - ok:
-        print(f"  sem imagem no Deezer : {total - ok}")
+        log(f"  sem imagem no Deezer : {total - ok}")
 
 
 if __name__ == "__main__":

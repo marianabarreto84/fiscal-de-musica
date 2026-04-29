@@ -5,11 +5,19 @@ Uso: poetry run python scripts/download_images.py [--limit N]
 """
 import sys
 import time
+from datetime import datetime
 
 sys.path.insert(0, ".")
 
 from backend.db import get_db
 from backend.routers.lastfm import _download_album_image
+
+
+def log(msg="", **kwargs):
+    while msg.startswith("\n"):
+        print()
+        msg = msg[1:]
+    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}", **kwargs)
 
 
 def main():
@@ -19,7 +27,7 @@ def main():
         try:
             limit = int(sys.argv[idx + 1])
         except (IndexError, ValueError):
-            print("Uso: poetry run python scripts/download_images.py [--limit N]")
+            log("Uso: poetry run python scripts/download_images.py [--limit N]")
             sys.exit(1)
 
     with get_db() as conn:
@@ -35,22 +43,22 @@ def main():
         ).fetchall()
 
     total = len(albums)
-    print(f"[images] {total} álbuns sem imagem")
+    log(f"[images] {total} álbuns sem imagem")
 
     ok = 0
     for i, al in enumerate(albums, 1):
         with get_db() as conn:
             result = _download_album_image(conn, str(al["id"]), al["artista"], al["titulo"])
         status = "ok" if result else "sem imagem"
-        print(f"  [{i}/{total}] {al['artista']} — {al['titulo']} — {status}", flush=True)
+        log(f"  [{i}/{total}] {al['artista']} — {al['titulo']} — {status}", flush=True)
         if result:
             ok += 1
         time.sleep(0.25)
 
-    print(f"\n[images] concluído!")
-    print(f"  baixados        : {ok}/{total}")
+    log(f"\n[images] concluído!")
+    log(f"  baixados        : {ok}/{total}")
     if total - ok:
-        print(f"  sem imagem no Last.fm: {total - ok}")
+        log(f"  sem imagem no Last.fm: {total - ok}")
 
 
 if __name__ == "__main__":

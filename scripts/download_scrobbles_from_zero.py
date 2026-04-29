@@ -4,6 +4,7 @@ Artistas, álbuns e músicas já cadastrados são mantidos.
 Uso: poetry run python scripts/download_scrobbles_from_zero.py [username]
 """
 import sys
+from datetime import datetime
 
 sys.path.insert(0, ".")
 
@@ -12,9 +13,16 @@ from backend.db import get_db
 from backend.routers.lastfm import _do_sync, _get_config
 
 
+def log(msg="", **kwargs):
+    while msg.startswith("\n"):
+        print()
+        msg = msg[1:]
+    print(f"[{datetime.now():%Y-%m-%d %H:%M:%S}] {msg}", **kwargs)
+
+
 def main():
     if not LASTFM_API_KEY:
-        print("Erro: LAST_FM_API_KEY não configurada no .env")
+        log("Erro: LAST_FM_API_KEY não configurada no .env")
         sys.exit(1)
 
     username = sys.argv[1] if len(sys.argv) > 1 else None
@@ -23,31 +31,31 @@ def main():
         if not username:
             username = _get_config(conn, "lastfm_username")
         if not username:
-            print("Erro: informe o username do Last.fm como argumento.")
+            log("Erro: informe o username do Last.fm como argumento.")
             sys.exit(1)
         total = conn.execute("SELECT COUNT(*) AS n FROM musicas.scrobble").fetchone()["n"]
 
-    print(f"[from-zero] usuário: {username}")
-    print(f"[from-zero] isso vai APAGAR {total:,} scrobbles e reimportar tudo do zero.")
-    print(f"[from-zero] artistas, álbuns e músicas serão mantidos.")
+    log(f"[from-zero] usuário: {username}")
+    log(f"[from-zero] isso vai APAGAR {total:,} scrobbles e reimportar tudo do zero.")
+    log(f"[from-zero] artistas, álbuns e músicas serão mantidos.")
     resposta = input("Confirma? (s/N) ").strip().lower()
     if resposta != "s":
-        print("[from-zero] cancelado.")
+        log("[from-zero] cancelado.")
         sys.exit(0)
 
     with get_db() as conn:
-        print(f"[from-zero] apagando {total:,} scrobbles...", flush=True)
+        log(f"[from-zero] apagando {total:,} scrobbles...", flush=True)
         conn.execute("DELETE FROM musicas.scrobble")
         conn.execute("DELETE FROM musicas.config WHERE key = 'lastfm_last_sync_ts'")
 
-    print("[from-zero] iniciando importação completa...", flush=True)
+    log("[from-zero] iniciando importação completa...", flush=True)
     stats = _do_sync(username, None)
 
-    print(f"\n[from-zero] concluído!")
-    print(f"  scrobbles importados : {stats['scrobbles']}")
-    print(f"  artistas novos       : {stats['novos_artistas']}")
-    print(f"  álbuns novos         : {stats['novos_albums']}")
-    print(f"  páginas lidas        : {stats['paginas']}")
+    log(f"\n[from-zero] concluído!")
+    log(f"  scrobbles importados : {stats['scrobbles']}")
+    log(f"  artistas novos       : {stats['novos_artistas']}")
+    log(f"  álbuns novos         : {stats['novos_albums']}")
+    log(f"  páginas lidas        : {stats['paginas']}")
 
 
 if __name__ == "__main__":
