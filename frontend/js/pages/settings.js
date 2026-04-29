@@ -115,10 +115,16 @@ async function renderUpdatesSection(el) {
             Tenta novamente em itens que ficaram sem imagem em syncs anteriores.
           </div>
         </div>
-        <button class="btn btn-secondary" id="download-pending-btn"
-                onclick="doDownloadImages()" ${pendTotal === 0 ? 'disabled' : ''}>
-          Baixar agora
-        </button>
+        <div style="display:flex;gap:8px;flex-shrink:0">
+          <button class="btn btn-secondary" id="download-pending-btn"
+                  onclick="doDownloadImages()" ${pendTotal === 0 ? 'disabled' : ''}>
+            Baixar agora
+          </button>
+          <button class="btn btn-secondary" onclick="navigate('image-queue')"
+                  ${pendTotal === 0 ? 'disabled' : ''}>
+            Abrir fila →
+          </button>
+        </div>
       </div>
     </div>
   `;

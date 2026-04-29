@@ -1,10 +1,11 @@
 const pages = {
-  dashboard: renderDashboard,
-  scrobbles: renderScrobbles,
-  artistas:  renderArtistas,
-  albums:    renderAlbums,
-  stats:     renderStats,
-  settings:  renderSettings,
+  dashboard:     renderDashboard,
+  scrobbles:     renderScrobbles,
+  artistas:      renderArtistas,
+  albums:        renderAlbums,
+  stats:         renderStats,
+  settings:      renderSettings,
+  'image-queue': renderImageQueue,
 };
 
 let currentPage = null;

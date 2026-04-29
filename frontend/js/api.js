@@ -48,6 +48,7 @@ const api = {
   getArtista: (id) => api.get(`/artistas/${id}`),
   setArtistaImage: (id, url) => api.put(`/artistas/${id}/image`, { url }),
   downloadArtistaImage: (id) => api.post(`/artistas/${id}/download-image`),
+  getPendingArtistas:   (limit = 500) => api.get(`/artistas/pending-images?limit=${limit}`),
 
   // Álbuns
   getAlbums: (q = '', limit = 100, artistaId = null) =>
@@ -55,6 +56,7 @@ const api = {
   getAlbum: (id) => api.get(`/albums/${id}`),
   setAlbumImage: (id, url) => api.put(`/albums/${id}/image`, { url }),
   downloadAlbumImage: (id) => api.post(`/albums/${id}/download-image`),
+  getPendingAlbums:   (limit = 500) => api.get(`/albums/pending-images?limit=${limit}`),
 
   // Stats
   getOverview:     ()      => api.get('/stats/overview'),

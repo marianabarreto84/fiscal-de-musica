@@ -57,6 +57,42 @@ def list_albums(
     ]
 
 
+@router.get("/pending-images")
+def list_pending_album_images(limit: int = Query(500)):
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT
+                al.id,
+                al.titulo,
+                al.ano,
+                ar.id   AS artista_id,
+                ar.nome AS artista,
+                COUNT(sc.id) AS plays
+            FROM musicas.album al
+            JOIN musicas.artista ar ON ar.id = al.artista_id
+            LEFT JOIN musicas.musica  mu ON mu.album_id = al.id
+            LEFT JOIN musicas.scrobble sc ON sc.musica_id = mu.id
+            WHERE al.image_path IS NULL
+            GROUP BY al.id, al.titulo, al.ano, ar.id, ar.nome
+            ORDER BY plays DESC, al.titulo
+            LIMIT %s
+            """,
+            (limit,),
+        ).fetchall()
+    return [
+        {
+            "id":         str(r["id"]),
+            "titulo":     r["titulo"],
+            "ano":        r["ano"],
+            "artista_id": str(r["artista_id"]),
+            "artista":    r["artista"],
+            "plays":      r["plays"],
+        }
+        for r in rows
+    ]
+
+
 @router.put("/{album_id}/image")
 def set_album_image(album_id: str, body: ImageUrlBody):
     with get_db() as conn:

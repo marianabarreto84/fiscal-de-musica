@@ -91,3 +91,12 @@ function weekdayName(isoDate) {
 function pluralize(n, singular, plural) {
   return `${n} ${n === 1 ? singular : plural}`;
 }
+
+function escText(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function escAttr(s) {
+  return String(s ?? '').replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
