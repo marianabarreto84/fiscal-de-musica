@@ -22,16 +22,25 @@ const api = {
     if (!r.ok) throw new Error(await r.text());
     return r.json();
   },
+  async del(path) {
+    const r = await fetch(API_BASE + path, { method: 'DELETE' });
+    if (!r.ok) throw new Error(await r.text());
+    return r.json();
+  },
 
   // Last.fm
   getLfmStatus:      ()           => api.get('/lastfm/status'),
   syncLfm:           (username)   => api.post(`/lastfm/sync${username ? '?username=' + encodeURIComponent(username) : ''}`),
   syncLfmFull:       (username)   => api.post(`/lastfm/sync-full${username ? '?username=' + encodeURIComponent(username) : ''}`),
-  downloadImages:    (limit = 20) => api.post(`/lastfm/download-images?limit=${limit}`),
+  getSyncProgress:   ()           => api.get('/lastfm/sync/progress'),
+  downloadImages:    ()           => api.post('/lastfm/download-images'),
 
   // Scrobbles
   getScrobbles: (from, to, limit = 200, offset = 0) =>
     api.get(`/scrobbles?date_from=${from}&date_to=${to}&limit=${limit}&offset=${offset}`),
+  getScrobble:    (id)        => api.get(`/scrobbles/${id}`),
+  updateScrobble: (id, data)  => api.put(`/scrobbles/${id}`, data),
+  deleteScrobble: (id)        => api.del(`/scrobbles/${id}`),
 
   // Artistas
   getArtistas: (q = '', limit = 100) =>
@@ -44,6 +53,7 @@ const api = {
     api.get(`/albums?q=${encodeURIComponent(q)}&limit=${limit}${artistaId ? '&artista_id=' + artistaId : ''}`),
   getAlbum: (id) => api.get(`/albums/${id}`),
   setAlbumImage: (id, url) => api.put(`/albums/${id}/image`, { url }),
+  downloadAlbumImage: (id) => api.post(`/albums/${id}/download-image`),
 
   // Stats
   getOverview:     ()      => api.get('/stats/overview'),
