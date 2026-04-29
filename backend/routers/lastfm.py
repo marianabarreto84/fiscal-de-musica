@@ -1,4 +1,5 @@
 import time
+import threading
 import httpx
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Query
@@ -9,6 +10,14 @@ from backend.config import LASTFM_API_KEY, IMAGES_DIR
 router = APIRouter()
 
 LASTFM_API = "https://ws.audioscrobbler.com/2.0/"
+
+_sync_state: dict = {"running": False, "phase": "idle"}
+_sync_lock = threading.Lock()
+
+
+def _chunked(lst, size):
+    for i in range(0, len(lst), size):
+        yield lst[i:i + size]
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -307,119 +316,276 @@ def _download_artist_image(conn, artista_id: str, nome: str):
 
 # ── sync logic ────────────────────────────────────────────────────────────────
 
-def _do_sync(username: str, from_ts: Optional[int]) -> dict:
-    stats = {"scrobbles": 0, "novos_artistas": 0, "novos_albums": 0, "paginas": 0}
-    page = 1
+def _run_sync(username: str, from_ts: Optional[int]):
+    touched_artistas: set[str] = set()
+    touched_albums: set[str] = set()
 
-    while True:
-        params: dict = {
-            "method": "user.getrecenttracks",
-            "user": username,
-            "limit": 200,
-            "page": page,
-            "extended": 0,
-        }
-        if from_ts:
-            params["from"] = from_ts + 1
+    try:
+        page = 1
+        while True:
+            params: dict = {
+                "method": "user.getrecenttracks",
+                "user": username,
+                "limit": 200,
+                "page": page,
+                "extended": 0,
+            }
+            if from_ts:
+                params["from"] = from_ts + 1
 
-        data = _lfm(params)
-        tracks_data = data.get("recenttracks", {})
-        tracks = tracks_data.get("track", [])
-        if isinstance(tracks, dict):
-            tracks = [tracks]
+            data = _lfm(params)
+            tracks_data = data.get("recenttracks", {})
+            tracks = tracks_data.get("track", [])
+            if isinstance(tracks, dict):
+                tracks = [tracks]
 
-        attr = tracks_data.get("@attr", {})
-        total_pages = int(attr.get("totalPages", 1))
-        stats["paginas"] = total_pages
+            attr = tracks_data.get("@attr", {})
+            total_pages = int(attr.get("totalPages", 1))
+            _sync_state["total_pages"] = total_pages
+            _sync_state["page"] = page
+            _sync_state["page_track_count"] = len(tracks)
+            _sync_state["page_track_done"] = 0
 
-        print(f"[sync] página {page}/{total_pages} — {stats['scrobbles']} scrobbles importados até agora", flush=True)
+            print(f"[sync] página {page}/{total_pages} — {_sync_state['scrobbles']} scrobbles importados até agora", flush=True)
 
-        with get_db() as conn:
-            plataforma_id = _get_or_create_plataforma(conn, "Last.fm")
+            with get_db() as conn:
+                plataforma_id = _get_or_create_plataforma(conn, "Last.fm")
 
-            for track in tracks:
-                if track.get("@attr", {}).get("nowplaying"):
-                    continue
+                for track in tracks:
+                    if track.get("@attr", {}).get("nowplaying"):
+                        _sync_state["page_track_done"] += 1
+                        continue
 
-                date_info = track.get("date", {})
-                ts = int(date_info.get("uts", 0)) if date_info else 0
-                if not ts:
-                    continue
+                    date_info = track.get("date", {})
+                    ts = int(date_info.get("uts", 0)) if date_info else 0
+                    if not ts:
+                        _sync_state["page_track_done"] += 1
+                        continue
 
-                artista_nome = track.get("artist", {}).get("#text", "") or track.get("artist", "")
-                album_nome   = track.get("album",  {}).get("#text", "") or ""
-                musica_nome  = track.get("name", "") or ""
-                artista_mbid = track.get("artist", {}).get("mbid", "") or None
-                album_mbid   = track.get("album",  {}).get("mbid", "") or None
-                musica_mbid  = track.get("mbid", "") or None
+                    artista_nome = track.get("artist", {}).get("#text", "") or track.get("artist", "")
+                    album_nome   = track.get("album",  {}).get("#text", "") or ""
+                    musica_nome  = track.get("name", "") or ""
+                    artista_mbid = track.get("artist", {}).get("mbid", "") or None
+                    album_mbid   = track.get("album",  {}).get("mbid", "") or None
+                    musica_mbid  = track.get("mbid", "") or None
 
-                if not artista_nome or not musica_nome:
-                    continue
+                    if not artista_nome or not musica_nome:
+                        _sync_state["page_track_done"] += 1
+                        continue
 
-                artista_id = _get_or_create_artista(conn, artista_nome, artista_mbid)
-                album_id   = _get_or_create_album(conn, album_nome, artista_id, album_mbid)
-                musica_id  = _get_or_create_musica(conn, musica_nome, artista_id, album_id, musica_mbid)
+                    artista_id = _get_or_create_artista(conn, artista_nome, artista_mbid)
+                    album_id   = _get_or_create_album(conn, album_nome, artista_id, album_mbid)
+                    musica_id  = _get_or_create_musica(conn, musica_nome, artista_id, album_id, musica_mbid)
 
-                from datetime import datetime, timezone
-                ocorrido_em = datetime.fromtimestamp(ts, tz=timezone.utc)
+                    touched_artistas.add(artista_id)
+                    if album_id:
+                        touched_albums.add(album_id)
 
-                row = conn.execute(
-                    """
-                    INSERT INTO musicas.scrobble
-                        (musica_id, plataforma_id, ocorrido_em, lastfm_ts, data_precisao)
-                    VALUES (%s::uuid, %s::uuid, %s, %s, 'hora')
-                    ON CONFLICT (lastfm_ts) WHERE lastfm_ts IS NOT NULL DO NOTHING
-                    RETURNING id
-                    """,
-                    (musica_id, plataforma_id, ocorrido_em, ts),
-                ).fetchone()
+                    from datetime import datetime, timezone
+                    ocorrido_em = datetime.fromtimestamp(ts, tz=timezone.utc)
 
-                if row:
-                    stats["scrobbles"] += 1
+                    row = conn.execute(
+                        """
+                        INSERT INTO musicas.scrobble
+                            (musica_id, plataforma_id, ocorrido_em, lastfm_ts, data_precisao)
+                        VALUES (%s::uuid, %s::uuid, %s, %s, 'hora')
+                        ON CONFLICT (lastfm_ts) WHERE lastfm_ts IS NOT NULL DO NOTHING
+                        RETURNING id
+                        """,
+                        (musica_id, plataforma_id, ocorrido_em, ts),
+                    ).fetchone()
 
-        # Download images para artistas/albums novos (batch, 1 por página para não travar)
-        with get_db() as conn:
-            new_artistas = conn.execute(
-                """
-                SELECT DISTINCT ar.id, ar.nome
-                FROM musicas.artista ar
-                JOIN musicas.musica  mu ON mu.artista_id = ar.id
-                JOIN musicas.scrobble sc ON sc.musica_id = mu.id
-                WHERE ar.image_path IS NULL
-                LIMIT 5
-                """
-            ).fetchall()
-            for a in new_artistas:
+                    if row:
+                        _sync_state["scrobbles"] += 1
+                    _sync_state["page_track_done"] += 1
+
+            if page >= total_pages:
+                break
+            page += 1
+            time.sleep(0.25)
+
+        # Fase 2 — imagens dos artistas tocados nesta sync que ainda não têm
+        artistas_pendentes: list = []
+        if touched_artistas:
+            with get_db() as conn:
+                for chunk in _chunked(list(touched_artistas), 500):
+                    placeholders = ",".join(["%s::uuid"] * len(chunk))
+                    rows = conn.execute(
+                        f"SELECT id, nome FROM musicas.artista "
+                        f"WHERE image_path IS NULL AND id IN ({placeholders})",
+                        tuple(chunk),
+                    ).fetchall()
+                    artistas_pendentes.extend(rows)
+
+        _sync_state["phase"] = "images_artistas"
+        _sync_state["artistas_total"] = len(artistas_pendentes)
+
+        for a in artistas_pendentes:
+            with get_db() as conn:
                 if _download_artist_image(conn, str(a["id"]), a["nome"]):
-                    stats["novos_artistas"] += 1
-                time.sleep(0.2)
+                    _sync_state["novos_artistas"] += 1
+            _sync_state["artistas_baixados"] += 1
+            time.sleep(0.2)
 
-            new_albums = conn.execute(
+        # Fase 3 — imagens dos álbuns tocados nesta sync que ainda não têm
+        albums_pendentes: list = []
+        if touched_albums:
+            with get_db() as conn:
+                for chunk in _chunked(list(touched_albums), 500):
+                    placeholders = ",".join(["%s::uuid"] * len(chunk))
+                    rows = conn.execute(
+                        f"""
+                        SELECT al.id, al.titulo, ar.nome AS artista
+                        FROM musicas.album al
+                        JOIN musicas.artista ar ON ar.id = al.artista_id
+                        WHERE al.image_path IS NULL AND al.id IN ({placeholders})
+                        """,
+                        tuple(chunk),
+                    ).fetchall()
+                    albums_pendentes.extend(rows)
+
+        _sync_state["phase"] = "images_albums"
+        _sync_state["albums_total"] = len(albums_pendentes)
+
+        for al in albums_pendentes:
+            with get_db() as conn:
+                if _download_album_image(conn, str(al["id"]), al["artista"], al["titulo"]):
+                    _sync_state["novos_albums"] += 1
+            _sync_state["albums_baixados"] += 1
+            time.sleep(0.2)
+
+        with get_db() as conn:
+            now_ts = int(time.time())
+            _set_config(conn, "lastfm_last_sync_ts", str(now_ts))
+            _set_config(conn, "lastfm_username", username)
+
+        _sync_state["phase"] = "done"
+        print(
+            f"[sync] concluída — {_sync_state['scrobbles']} scrobbles, "
+            f"{_sync_state['novos_artistas']} artistas, "
+            f"{_sync_state['novos_albums']} álbuns",
+            flush=True,
+        )
+    except HTTPException as e:
+        _sync_state["phase"] = "error"
+        _sync_state["error"] = str(e.detail)
+        print(f"[sync] erro: {e.detail}", flush=True)
+    except Exception as e:
+        _sync_state["phase"] = "error"
+        _sync_state["error"] = str(e)
+        print(f"[sync] erro: {e}", flush=True)
+    finally:
+        _sync_state["running"] = False
+        _sync_state["finished_at"] = time.time()
+
+
+def _start_sync_bg(username: str, from_ts: Optional[int]) -> bool:
+    with _sync_lock:
+        if _sync_state.get("running"):
+            return False
+        _sync_state.clear()
+        _sync_state.update({
+            "running": True,
+            "mode": "sync",
+            "phase": "fetching",
+            "page": 0,
+            "total_pages": 0,
+            "page_track_count": 0,
+            "page_track_done": 0,
+            "scrobbles": 0,
+            "artistas_total": 0,
+            "artistas_baixados": 0,
+            "albums_total": 0,
+            "albums_baixados": 0,
+            "novos_artistas": 0,
+            "novos_albums": 0,
+            "error": None,
+            "started_at": time.time(),
+        })
+
+    threading.Thread(
+        target=_run_sync, args=(username, from_ts), daemon=True
+    ).start()
+    return True
+
+
+def _run_download_pending():
+    try:
+        with get_db() as conn:
+            artistas = conn.execute(
+                "SELECT id, nome FROM musicas.artista WHERE image_path IS NULL"
+            ).fetchall()
+
+        _sync_state["phase"] = "images_artistas"
+        _sync_state["artistas_total"] = len(artistas)
+
+        for a in artistas:
+            with get_db() as conn:
+                if _download_artist_image(conn, str(a["id"]), a["nome"]):
+                    _sync_state["novos_artistas"] += 1
+            _sync_state["artistas_baixados"] += 1
+            time.sleep(0.25)
+
+        with get_db() as conn:
+            albums = conn.execute(
                 """
-                SELECT DISTINCT al.id, al.titulo, ar.nome AS artista
-                FROM musicas.album  al
+                SELECT al.id, al.titulo, ar.nome AS artista
+                FROM musicas.album al
                 JOIN musicas.artista ar ON ar.id = al.artista_id
                 WHERE al.image_path IS NULL
-                LIMIT 5
                 """
             ).fetchall()
-            for al in new_albums:
+
+        _sync_state["phase"] = "images_albums"
+        _sync_state["albums_total"] = len(albums)
+
+        for al in albums:
+            with get_db() as conn:
                 if _download_album_image(conn, str(al["id"]), al["artista"], al["titulo"]):
-                    stats["novos_albums"] += 1
-                time.sleep(0.2)
+                    _sync_state["novos_albums"] += 1
+            _sync_state["albums_baixados"] += 1
+            time.sleep(0.25)
 
-        if page >= total_pages:
-            break
-        page += 1
-        time.sleep(0.25)
+        _sync_state["phase"] = "done"
+        print(
+            f"[download] concluído — {_sync_state['novos_artistas']} artistas, "
+            f"{_sync_state['novos_albums']} álbuns",
+            flush=True,
+        )
+    except HTTPException as e:
+        _sync_state["phase"] = "error"
+        _sync_state["error"] = str(e.detail)
+        print(f"[download] erro: {e.detail}", flush=True)
+    except Exception as e:
+        _sync_state["phase"] = "error"
+        _sync_state["error"] = str(e)
+        print(f"[download] erro: {e}", flush=True)
+    finally:
+        _sync_state["running"] = False
+        _sync_state["finished_at"] = time.time()
 
-    with get_db() as conn:
-        now_ts = int(time.time())
-        _set_config(conn, "lastfm_last_sync_ts", str(now_ts))
-        _set_config(conn, "lastfm_username", username)
 
-    print(f"[sync] concluída — {stats['scrobbles']} scrobbles, {stats['novos_artistas']} artistas, {stats['novos_albums']} álbuns", flush=True)
-    return stats
+def _start_download_bg() -> bool:
+    with _sync_lock:
+        if _sync_state.get("running"):
+            return False
+        _sync_state.clear()
+        _sync_state.update({
+            "running": True,
+            "mode": "download_pending",
+            "phase": "images_artistas",
+            "artistas_total": 0,
+            "artistas_baixados": 0,
+            "albums_total": 0,
+            "albums_baixados": 0,
+            "novos_artistas": 0,
+            "novos_albums": 0,
+            "error": None,
+            "started_at": time.time(),
+        })
+
+    threading.Thread(target=_run_download_pending, daemon=True).start()
+    return True
 
 
 # ── endpoints ─────────────────────────────────────────────────────────────────
@@ -430,12 +596,25 @@ def status():
         username  = _get_config(conn, "lastfm_username")
         last_sync = _get_config(conn, "lastfm_last_sync_ts")
         total = conn.execute("SELECT COUNT(*) AS n FROM musicas.scrobble").fetchone()["n"]
+        pendentes_artistas = conn.execute(
+            "SELECT COUNT(*) AS n FROM musicas.artista WHERE image_path IS NULL"
+        ).fetchone()["n"]
+        pendentes_albums = conn.execute(
+            "SELECT COUNT(*) AS n FROM musicas.album WHERE image_path IS NULL"
+        ).fetchone()["n"]
     return {
         "username":  username,
         "last_sync": last_sync,
         "total_scrobbles": total,
         "api_key_ok": bool(LASTFM_API_KEY),
+        "pendentes_artistas": pendentes_artistas,
+        "pendentes_albums": pendentes_albums,
     }
+
+
+@router.get("/sync/progress")
+def sync_progress():
+    return dict(_sync_state)
 
 
 @router.post("/sync")
@@ -451,8 +630,9 @@ def sync(username: Optional[str] = Query(None)):
         last_ts_str = _get_config(conn, "lastfm_last_sync_ts")
 
     from_ts = int(last_ts_str) if last_ts_str else None
-    stats = _do_sync(username, from_ts)
-    return {"ok": True, **stats}
+    if not _start_sync_bg(username, from_ts):
+        raise HTTPException(409, "Sincronização já em andamento")
+    return {"ok": True, "started": True}
 
 
 @router.post("/sync-full")
@@ -466,36 +646,15 @@ def sync_full(username: Optional[str] = Query(None)):
         if not username:
             raise HTTPException(400, "Informe o username do Last.fm")
 
-    stats = _do_sync(username, None)
-    return {"ok": True, **stats}
+    if not _start_sync_bg(username, None):
+        raise HTTPException(409, "Sincronização já em andamento")
+    return {"ok": True, "started": True}
 
 
 @router.post("/download-images")
-def download_images(limit: int = Query(20)):
-    downloaded = 0
-    with get_db() as conn:
-        artistas = conn.execute(
-            "SELECT id, nome FROM musicas.artista WHERE image_path IS NULL LIMIT %s",
-            (limit,),
-        ).fetchall()
-        for a in artistas:
-            if _download_artist_image(conn, str(a["id"]), a["nome"]):
-                downloaded += 1
-            time.sleep(0.25)
-
-        albums = conn.execute(
-            """
-            SELECT al.id, al.titulo, ar.nome AS artista
-            FROM musicas.album al
-            JOIN musicas.artista ar ON ar.id = al.artista_id
-            WHERE al.image_path IS NULL
-            LIMIT %s
-            """,
-            (limit,),
-        ).fetchall()
-        for al in albums:
-            if _download_album_image(conn, str(al["id"]), al["artista"], al["titulo"]):
-                downloaded += 1
-            time.sleep(0.25)
-
-    return {"ok": True, "downloaded": downloaded}
+def download_images():
+    if not LASTFM_API_KEY:
+        raise HTTPException(400, "LAST_FM_API_KEY não configurada no .env")
+    if not _start_download_bg():
+        raise HTTPException(409, "Operação já em andamento")
+    return {"ok": True, "started": True}
