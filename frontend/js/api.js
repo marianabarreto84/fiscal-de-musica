@@ -47,6 +47,7 @@ const api = {
     api.get(`/artistas?q=${encodeURIComponent(q)}&limit=${limit}`),
   getArtista: (id) => api.get(`/artistas/${id}`),
   setArtistaImage: (id, url) => api.put(`/artistas/${id}/image`, { url }),
+  downloadArtistaImage: (id) => api.post(`/artistas/${id}/download-image`),
 
   // Álbuns
   getAlbums: (q = '', limit = 100, artistaId = null) =>

@@ -162,12 +162,15 @@ function renderScrobbleModal(s, editing) {
     ? `<span style="cursor:pointer;text-decoration:underline" onclick="modal.hide();openAlbum('${s.album.id}')">${escText(s.album.titulo)}</span>${s.album.ano ? ` · ${s.album.ano}` : ''}`
     : '<span class="text-muted">sem álbum</span>';
 
-  const needsImage = !s.album || !s.album.image_path;
-  const downloadImgBtn = (s.album && !s.album.image_path)
-    ? `<button class="btn btn-secondary" onclick="tryDownloadAlbumImage('${s.album.id}','${s.id}')" style="margin-top:8px">
-         <svg viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor"/></svg>
-         Baixar imagem do álbum
-       </button>`
+  const dlIcon = `<svg viewBox="0 0 24 24" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z" fill="currentColor"/></svg>`;
+  const albumImgBtn = (s.album && !s.album.image_path)
+    ? `<button class="btn btn-secondary" onclick="tryDownloadAlbumImage('${s.album.id}','${s.id}')" style="margin-top:6px">${dlIcon}Baixar imagem do álbum</button>`
+    : '';
+  const artistaImgBtn = (!s.artista.image_path)
+    ? `<button class="btn btn-secondary" onclick="tryDownloadArtistaImage('${s.artista.id}','${s.id}')" style="margin-top:6px;margin-left:6px">${dlIcon}Baixar imagem do artista</button>`
+    : '';
+  const imageButtons = (albumImgBtn || artistaImgBtn)
+    ? `<div style="margin-top:6px">${albumImgBtn}${artistaImgBtn}</div>`
     : '';
 
   const headerActions = editing
@@ -245,7 +248,7 @@ function renderScrobbleModal(s, editing) {
         <div style="min-width:0;flex:1">
           <div class="modal-title" style="white-space:normal">${escText(s.musica.titulo)}</div>
           <div style="font-size:13px;color:var(--text2);cursor:pointer" onclick="modal.hide();openArtista('${s.artista.id}')">${escText(s.artista.nome)}</div>
-          ${needsImage && s.album ? downloadImgBtn : ''}
+          ${imageButtons}
         </div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0">${headerActions}</div>
@@ -286,14 +289,49 @@ async function confirmDeleteScrobble(id) {
   }
 }
 
-async function tryDownloadAlbumImage(albumId, scrobbleId) {
-  toast('Buscando imagem...');
+async function _tryDownloadImage({ kind, id, scrobbleId }) {
+  const auto = kind === 'album' ? api.downloadAlbumImage : api.downloadArtistaImage;
+  const setUrl = kind === 'album' ? api.setAlbumImage : api.setArtistaImage;
+  const labelKind = kind === 'album' ? 'álbum' : 'artista';
+
+  toast('Buscando imagem no Last.fm...');
   try {
-    await api.downloadAlbumImage(albumId);
+    await auto(id);
     toast('Imagem baixada');
     if (scrobbleId) await openScrobble(scrobbleId);
     loadScrobbles();
+    return;
   } catch (e) {
-    toast('Não foi possível baixar: ' + e.message, 'error');
+    // não achou — cai pro prompt de URL
   }
+
+  const url = await modal.prompt({
+    title: `Imagem do ${labelKind} não encontrada no Last.fm`,
+    label: 'Cole a URL de uma imagem (ou cancele):',
+    placeholder: 'https://...',
+    confirmText: 'Baixar',
+  });
+
+  if (!url || !url.trim()) {
+    if (scrobbleId) await openScrobble(scrobbleId);
+    return;
+  }
+
+  try {
+    await setUrl(id, url.trim());
+    toast('Imagem atualizada');
+    if (scrobbleId) await openScrobble(scrobbleId);
+    loadScrobbles();
+  } catch (e) {
+    toast('Erro ao baixar da URL: ' + e.message, 'error');
+    if (scrobbleId) await openScrobble(scrobbleId);
+  }
+}
+
+function tryDownloadAlbumImage(albumId, scrobbleId) {
+  return _tryDownloadImage({ kind: 'album', id: albumId, scrobbleId });
+}
+
+function tryDownloadArtistaImage(artistaId, scrobbleId) {
+  return _tryDownloadImage({ kind: 'artista', id: artistaId, scrobbleId });
 }

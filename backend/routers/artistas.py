@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional
 from backend.db import get_db
-from backend.routers.lastfm import replace_image_from_url
+from backend.routers.lastfm import replace_image_from_url, _download_artist_image
 
 router = APIRouter()
 
@@ -56,6 +56,23 @@ def list_artistas(
 def set_artista_image(artista_id: str, body: ImageUrlBody):
     with get_db() as conn:
         rel = replace_image_from_url(conn, "artistas", artista_id, body.url)
+    return {"ok": True, "image_path": rel}
+
+
+@router.post("/{artista_id}/download-image")
+def download_artista_image(artista_id: str):
+    with get_db() as conn:
+        row = conn.execute(
+            "SELECT id, nome FROM musicas.artista WHERE id = %s::uuid",
+            (artista_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(404, "Artista não encontrado")
+
+        rel = _download_artist_image(conn, str(row["id"]), row["nome"])
+
+    if not rel:
+        raise HTTPException(404, "Imagem não encontrada no Last.fm")
     return {"ok": True, "image_path": rel}
 
 
