@@ -4,6 +4,102 @@ function _destroyChart(id) {
   if (_chartInstances[id]) { _chartInstances[id].destroy(); delete _chartInstances[id]; }
 }
 
+function renderPaceCard(overview) {
+  const tabs = [
+    {
+      id: 'week',
+      label: 'Esta semana',
+      current: overview.esta_semana,
+      previous: overview.semana_passada,
+      daysInto: overview.dias_decorridos_semana,
+      daysTotal: 7,
+      prevLabel: 'semana passada',
+    },
+    {
+      id: 'month',
+      label: 'Este mês',
+      current: overview.este_mes,
+      previous: overview.mes_passado,
+      daysInto: overview.dias_decorridos_mes,
+      daysTotal: overview.dias_no_mes,
+      prevLabel: 'mês passado',
+    },
+    {
+      id: 'year',
+      label: 'Este ano',
+      current: overview.este_ano,
+      previous: overview.ano_passado,
+      daysInto: overview.dias_decorridos_ano,
+      daysTotal: overview.dias_no_ano,
+      prevLabel: 'ano passado',
+    },
+  ];
+
+  function tabHtml(tab, active) {
+    const pct = tab.previous > 0 ? Math.min(tab.current / tab.previous, 1) : (tab.current > 0 ? 1 : 0);
+    const projected = tab.daysInto > 0
+      ? Math.round((tab.current / tab.daysInto) * tab.daysTotal)
+      : 0;
+    const neededPerDay = tab.previous > tab.current && tab.daysInto < tab.daysTotal
+      ? ((tab.previous - tab.current) / (tab.daysTotal - tab.daysInto)).toFixed(1)
+      : null;
+
+    const barWidth = Math.round(pct * 100);
+    const ahead = projected >= tab.previous;
+
+    const projection = tab.previous > 0
+      ? (ahead
+        ? `No ritmo atual, você vai terminar o período com <strong>${projected.toLocaleString('pt-BR')} scrobbles</strong> — melhor que os <strong>${tab.previous.toLocaleString('pt-BR')} scrobbles</strong> de ${tab.prevLabel}.`
+        : neededPerDay
+          ? `Você precisa de <strong>${neededPerDay} scrobbles/dia</strong> para superar ${tab.prevLabel}.`
+          : `Você superou ${tab.prevLabel}!`)
+      : `Você fez <strong>${tab.current.toLocaleString('pt-BR')} scrobbles</strong> até agora.`;
+
+    return `
+      <div class="pace-tab-content" id="pace-tab-${tab.id}" style="display:${active ? 'block' : 'none'}">
+        <div style="margin-bottom:16px">
+          <div style="font-size:12px;color:var(--text3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:6px">Total até agora</div>
+          <div style="font-size:32px;font-family:var(--font-display);color:var(--text)">${tab.current.toLocaleString('pt-BR')} <span style="font-size:16px;color:var(--text3)">scrobbles</span></div>
+        </div>
+
+        <div style="margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--text3);margin-bottom:6px">
+            <span>Agora</span>
+            <span>${tab.current.toLocaleString('pt-BR')} / ${tab.previous.toLocaleString('pt-BR')} scrobbles (${tab.prevLabel})</span>
+          </div>
+          <div style="background:var(--bg4);border-radius:4px;height:6px;margin-bottom:6px;overflow:hidden">
+            <div style="height:100%;width:${barWidth}%;background:var(--accent);border-radius:4px;transition:width 0.4s ease"></div>
+          </div>
+          <div style="background:var(--bg4);border-radius:4px;height:4px;overflow:hidden;opacity:0.4">
+            <div style="height:100%;width:100%;background:var(--text3);border-radius:4px"></div>
+          </div>
+        </div>
+
+        <div style="font-size:13px;color:var(--text2);line-height:1.6">${projection}</div>
+      </div>`;
+  }
+
+  return `
+    <div class="stat-card" style="grid-column:1/-1">
+      <div style="display:flex;gap:8px;margin-bottom:20px">
+        ${tabs.map((t, i) => `
+          <button class="btn btn-sm ${i === 0 ? 'btn-secondary' : 'btn-ghost'}"
+                  id="pace-btn-${t.id}"
+                  onclick="switchPaceTab('${t.id}')">${t.label}</button>
+        `).join('')}
+      </div>
+      ${tabs.map((t, i) => tabHtml(t, i === 0)).join('')}
+    </div>`;
+}
+
+function switchPaceTab(id) {
+  ['week', 'month', 'year'].forEach(t => {
+    document.getElementById('pace-tab-' + t).style.display = t === id ? 'block' : 'none';
+    const btn = document.getElementById('pace-btn-' + t);
+    btn.className = 'btn btn-sm ' + (t === id ? 'btn-secondary' : 'btn-ghost');
+  });
+}
+
 function _loadChartJs() {
   return new Promise(resolve => {
     if (window.Chart) { resolve(); return; }
@@ -40,6 +136,10 @@ async function renderStats() {
         </div>
       </div>
       <div class="page-body">
+        <div class="stats-grid" style="margin-bottom:24px">
+          ${renderPaceCard(overview)}
+        </div>
+
         <div class="stats-grid">
           <div class="stat-card">
             <div class="stat-label">Total scrobbles</div>
@@ -60,18 +160,6 @@ async function renderStats() {
           <div class="stat-card">
             <div class="stat-label">Hoje</div>
             <div class="stat-value">${overview.hoje}</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Esta semana</div>
-            <div class="stat-value">${overview.esta_semana}</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Este mês</div>
-            <div class="stat-value">${overview.este_mes}</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-label">Este ano</div>
-            <div class="stat-value">${overview.este_ano}</div>
           </div>
         </div>
 
