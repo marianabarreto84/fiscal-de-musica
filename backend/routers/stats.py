@@ -1,3 +1,5 @@
+import calendar
+from datetime import date
 from fastapi import APIRouter, Query
 from typing import Optional
 from backend.db import get_db
@@ -32,6 +34,13 @@ def overview():
             "SELECT value FROM musicas.config WHERE key = 'lastfm_last_sync_ts'"
         ).fetchone()
 
+    today = date.today()
+    dias_decorridos_semana = today.weekday() + 1
+    dias_decorridos_mes    = today.day
+    dias_decorridos_ano    = (today - today.replace(month=1, day=1)).days + 1
+    dias_no_mes            = calendar.monthrange(today.year, today.month)[1]
+    dias_no_ano            = 366 if calendar.isleap(today.year) else 365
+
     r = totals
     return {
         "total_scrobbles": r["total_scrobbles"],
@@ -45,6 +54,11 @@ def overview():
         "semana_passada":  r["semana_passada"],
         "mes_passado":     r["mes_passado"],
         "ano_passado":     r["ano_passado"],
+        "dias_decorridos_semana": dias_decorridos_semana,
+        "dias_decorridos_mes":    dias_decorridos_mes,
+        "dias_decorridos_ano":    dias_decorridos_ano,
+        "dias_no_mes":            dias_no_mes,
+        "dias_no_ano":            dias_no_ano,
         "last_sync":       last_sync["value"] if last_sync else None,
     }
 
