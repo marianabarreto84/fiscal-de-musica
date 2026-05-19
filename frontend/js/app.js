@@ -33,7 +33,7 @@ async function checkApiStatus() {
   const dot = document.querySelector('#api-status .status-dot');
   const txt = document.querySelector('#api-status .status-text');
   try {
-    await fetch('http://localhost:8002/health', { signal: AbortSignal.timeout(3000) });
+    await fetch('/health', { signal: AbortSignal.timeout(3000) });
     if (dot) dot.className = 'status-dot ok';
     if (txt) txt.textContent = 'conectado';
   } catch {

@@ -74,7 +74,7 @@ DDL nova: adicione um statement idempotente (`CREATE TABLE IF NOT EXISTS`, `ALTE
 
 ## Gotchas
 
-- **Porta 8002 hardcoded no frontend** — `frontend/js/api.js` define `API_BASE = 'http://localhost:8002/api'` e `frontend/js/app.js` faz health check em `http://localhost:8002/health`. Trocar `PORT` no `.env` quebra o frontend sem mexer nesses dois lugares. (Idealmente o front faria fetch relativo, mas hoje não faz.)
+- **Frontend usa URLs relativas** — `frontend/js/api.js` define `API_BASE = '/api'` e `frontend/js/app.js` faz health check em `/health`. Funciona em qualquer host/porta (local, Cloudflare Tunnel, deploy). Não tem mais a porta hardcoded.
 - **CORS `allow_origins=["*"]`** — OK pra dev local; revisar se algum dia for ao ar.
 - **Spotify redirect URI** deve usar `127.0.0.1` (não `localhost`) — Spotify rejeita `localhost` em loopback. Default em `SPOTIFY_REDIRECT_URI` já tá certo; tem que bater EXATAMENTE com o cadastrado no Spotify Developer Dashboard.
 - **`LAST_FM_SHARED_SECRET`** está no `.env.example` mas o código atualmente só usa `LAST_FM_API_KEY` (leitura pública). Não remova do `.env.example` sem confirmar — pode quebrar fluxo de scrobble write futuro.
