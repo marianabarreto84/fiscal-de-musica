@@ -1,11 +1,14 @@
 import re
+import time
 from typing import List, Optional
 
 import psycopg.errors
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
 
+from backend import jobs, spotify
 from backend.db import get_db, get_ouvido_threshold, get_ouvido_apenas_disco_1
+from backend.genre_map import classify_genres
 
 router = APIRouter()
 
@@ -135,6 +138,7 @@ def get_projeto(projeto_id: str):
                 al.id, al.titulo, al.ano, al.image_path, al.spotify_id,
                 ar.id   AS artista_id,
                 ar.nome AS artista,
+                ar.generos AS artista_generos,
                 pa.sort_order, pa.adicionado_em,
                 musicas.album_listen_count(al.id, %s, %s) AS listen_count,
                 musicas.album_ouvido_para_projeto(al.id, %s, %s) AS ouvido,
@@ -207,6 +211,8 @@ def get_projeto(projeto_id: str):
                 "ouvido":           r["ouvido"],
                 "tracklist_total":  r["tracklist_total"],
                 "tracklist_ouvidas": r["tracklist_ouvidas"],
+                "generos":          r["artista_generos"] or [],
+                "macro_generos":    classify_genres(r["artista_generos"]),
             }
             for r in items
         ],
@@ -284,3 +290,89 @@ def remove_album_from_projeto(projeto_id: str, album_id: str):
         if cur.rowcount == 0:
             raise HTTPException(404, "Vínculo não encontrado")
     return {"message": "Removido"}
+
+
+# ── Job: sincronizar gêneros dos artistas via Spotify ────────────────────────
+# Percorre artistas que ainda não têm `generos` sincronizado. Pra cada um:
+#   - se já tem `spotify_id` no banco, chama get_artist() direto
+#   - senão, faz search_artist(nome) e adota o primeiro match
+# Salva `generos` (lista do Spotify) e `generos_synced_em` (NOW()). Próxima
+# rodada ignora os já sincronizados — pra re-sincronizar tudo, zere o campo
+# manualmente. Foca em artistas que aparecem em algum projeto pra não gastar
+# requests à toa com artistas que talvez nunca tenham scrobble.
+
+
+def _job_sync_artist_genres(job: jobs.Job) -> None:
+    with get_db() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT ar.id, ar.nome, ar.spotify_id
+            FROM musicas.artista ar
+            JOIN musicas.album al ON al.artista_id = ar.id
+            JOIN musicas.projeto_album pa ON pa.album_id = al.id
+            WHERE ar.generos_synced_em IS NULL
+            ORDER BY ar.nome
+            """
+        ).fetchall()
+
+    job.set(total=len(rows), last_log=f"{len(rows)} artistas pra sincronizar")
+    if not rows:
+        job.set(last_log="nada a fazer — todos os artistas em projetos já estão sincronizados")
+        return
+
+    ok = 0
+    fail = 0
+    for i, r in enumerate(rows, 1):
+        nome = r["nome"]
+        spotify_id = r["spotify_id"]
+        try:
+            if spotify_id:
+                art = spotify.get_artist(spotify_id)
+            else:
+                art = spotify.search_artist(nome)
+                if art and art.get("id"):
+                    spotify_id = art["id"]
+            generos = (art or {}).get("genres") or []
+            with get_db() as conn:
+                conn.execute(
+                    """
+                    UPDATE musicas.artista
+                    SET generos = %s,
+                        generos_synced_em = NOW(),
+                        spotify_id = COALESCE(spotify_id, %s)
+                    WHERE id = %s
+                    """,
+                    (generos, spotify_id, r["id"]),
+                )
+            ok += 1
+            job.set(
+                current=i,
+                last_log=f"[{i}/{len(rows)}] {nome} → {len(generos)} gêneros",
+            )
+            # Rate limit gentil — Spotify aguenta bem mais, mas joga seguro.
+            time.sleep(0.1)
+        except Exception as e:
+            fail += 1
+            # Marca synced_em mesmo em falha pra não ficar reprocessando — fica
+            # com generos=NULL e a próxima rodada manual pode forçar.
+            try:
+                with get_db() as conn:
+                    conn.execute(
+                        "UPDATE musicas.artista SET generos_synced_em = NOW() WHERE id = %s",
+                        (r["id"],),
+                    )
+            except Exception:
+                pass
+            job.set(
+                current=i,
+                last_log=f"[{i}/{len(rows)}] {nome} falhou: {str(e)[:80]}",
+            )
+
+    job.set(last_log=f"concluído — {ok} ok, {fail} falharam")
+
+
+jobs.register(
+    "sync_artist_genres",
+    "Sincronizar gêneros dos artistas (Spotify)",
+    _job_sync_artist_genres,
+)

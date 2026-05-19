@@ -117,6 +117,33 @@ def get_artist(spotify_artist_id: str) -> dict:
     return _api_get(f"/artists/{spotify_artist_id}")
 
 
+def search_artist(name: str) -> dict | None:
+    """Busca o artista no Spotify só pelo nome. Retorna o primeiro match (com
+    `id`, `name`, `genres`, `popularity`) ou None se não achar."""
+    if not name.strip():
+        return None
+    data = _api_get(
+        "/search",
+        {"q": f'artist:"{name}"', "type": "artist", "limit": 5, "market": "US"},
+    )
+    items = ((data.get("artists") or {}).get("items")) or []
+    if not items:
+        # Fallback: busca sem aspas (mais permissivo)
+        data = _api_get(
+            "/search",
+            {"q": name, "type": "artist", "limit": 5, "market": "US"},
+        )
+        items = ((data.get("artists") or {}).get("items")) or []
+    if not items:
+        return None
+    # Match exato (case-insensitive) se existir, senão o primeiro
+    lower = name.strip().lower()
+    for it in items:
+        if (it.get("name") or "").lower() == lower:
+            return it
+    return items[0]
+
+
 def pick_image(images: list[dict] | None) -> str | None:
     """Pega a maior imagem da lista do Spotify (lista vem em ordem decrescente
     de tamanho, mas validamos por width pra ser seguro)."""

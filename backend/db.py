@@ -44,6 +44,8 @@ def init_db():
         "ALTER TABLE musicas.album ADD COLUMN IF NOT EXISTS spotify_id TEXT",
         "ALTER TABLE musicas.album ADD COLUMN IF NOT EXISTS notas_md TEXT",
         "ALTER TABLE musicas.artista ADD COLUMN IF NOT EXISTS spotify_id TEXT",
+        "ALTER TABLE musicas.artista ADD COLUMN IF NOT EXISTS generos TEXT[]",
+        "ALTER TABLE musicas.artista ADD COLUMN IF NOT EXISTS generos_synced_em TIMESTAMP",
         "ALTER TABLE musicas.musica ADD COLUMN IF NOT EXISTS lastfm_mbid TEXT",
         "ALTER TABLE musicas.scrobble ADD COLUMN IF NOT EXISTS lastfm_ts BIGINT",
         "ALTER TABLE musicas.scrobble ADD COLUMN IF NOT EXISTS notas TEXT",

@@ -4,8 +4,18 @@ let _projDetailId = null;
 let _projDetailData = null;    // cache do GET /projetos/:id pra filtrar no cliente
 let _projFilterStatus = 'all'; // 'all' | 'ouvidos' | 'nao_ouvidos' | 'quase' | 'sem_tracklist'
 let _projFilterQuery = '';
+let _projFilterMacro = '';     // macro-gênero selecionado ('' = todos)
+let _projFilterSub = '';       // subgênero selecionado ('' = todos)
+let _projFilterDecada = '';    // década selecionada ('' = todas), ex: '1970'
 let _projSort = 'default';     // 'default' | 'completion' | 'ouvidas_desc' | 'ouvidas_asc'
                                // | 'plays_desc' | 'titulo' | 'artista' | 'ano_asc' | 'ano_desc'
+
+// Ordem de apresentação dos macros (espelha backend/genre_map.py)
+const MACRO_DISPLAY_ORDER = [
+  'rock', 'pop', 'hip hop', 'electronic', 'jazz', 'soul', 'rnb',
+  'folk', 'country', 'blues', 'metal', 'punk', 'reggae', 'classical',
+  'brasileira', 'world', 'outros',
+];
 
 // Limiar pro filtro "quase completos": pelo menos metade das faixas canônicas
 // scrobbladas, mas o álbum ainda não conta como ouvido.
@@ -94,6 +104,9 @@ function openProjeto(id) {
   _projDetailData = null;
   _projFilterStatus = 'all';
   _projFilterQuery = '';
+  _projFilterMacro = '';
+  _projFilterSub = '';
+  _projFilterDecada = '';
   _projSort = 'default';
   renderProjetos();
 }
@@ -157,6 +170,15 @@ async function renderProjetoDetail(id) {
             <option value="quase"${_projFilterStatus === 'quase' ? ' selected' : ''}>Quase completos (≥50%)</option>
             <option value="sem_tracklist"${_projFilterStatus === 'sem_tracklist' ? ' selected' : ''}>Sem tracklist canônica</option>
           </select>
+          <select class="form-select" id="projeto-macro-filter" onchange="setProjetoMacroFilter(this.value)">
+            ${_projetoMacroOptionsHtml(p.items)}
+          </select>
+          <select class="form-select" id="projeto-sub-filter" onchange="setProjetoSubFilter(this.value)">
+            ${_projetoSubOptionsHtml(p.items)}
+          </select>
+          <select class="form-select" id="projeto-decada-filter" onchange="setProjetoDecadaFilter(this.value)">
+            ${_projetoDecadaOptionsHtml(p.items)}
+          </select>
           <select class="form-select" style="width:auto;min-width:190px" id="projeto-sort" onchange="setProjetoSort(this.value)">
             <option value="default"${_projSort === 'default' ? ' selected' : ''}>Ordem do projeto</option>
             <option value="completion"${_projSort === 'completion' ? ' selected' : ''}>Mais perto de completar</option>
@@ -194,6 +216,91 @@ function setProjetoStatusFilter(v) {
 function setProjetoSort(v) {
   _projSort = v;
   renderProjetoItems();
+}
+
+function setProjetoMacroFilter(v) {
+  _projFilterMacro = v;
+  // Trocar macro reseta sub (subgêneros disponíveis dependem do macro)
+  _projFilterSub = '';
+  // Re-renderiza só o select de sub pra refletir o macro novo
+  const sub = document.getElementById('projeto-sub-filter');
+  if (sub && _projDetailData) sub.innerHTML = _projetoSubOptionsHtml(_projDetailData.items);
+  renderProjetoItems();
+}
+
+function setProjetoSubFilter(v) {
+  _projFilterSub = v;
+  renderProjetoItems();
+}
+
+function setProjetoDecadaFilter(v) {
+  _projFilterDecada = v;
+  renderProjetoItems();
+}
+
+function _projetoItemMacros(it) {
+  // Backend já calcula macro_generos. Defensivo caso venha vazio.
+  return Array.isArray(it.macro_generos) ? it.macro_generos : [];
+}
+
+function _projetoItemDecada(it) {
+  if (!it.ano) return null;
+  return Math.floor(it.ano / 10) * 10;
+}
+
+function _projetoMacroOptionsHtml(items) {
+  const counts = new Map();
+  items.forEach(it => _projetoItemMacros(it).forEach(m => counts.set(m, (counts.get(m) || 0) + 1)));
+  const macros = MACRO_DISPLAY_ORDER.filter(m => counts.has(m));
+  // Macros que apareceram mas não estão na ordem fixa (raro) vão pro fim
+  counts.forEach((_, m) => { if (!macros.includes(m)) macros.push(m); });
+  let html = `<option value="">Todos os gêneros</option>`;
+  macros.forEach(m => {
+    const sel = m === _projFilterMacro ? ' selected' : '';
+    html += `<option value="${escAttr(m)}"${sel}>${escText(m)} (${counts.get(m)})</option>`;
+  });
+  return html;
+}
+
+function _projetoSubOptionsHtml(items) {
+  // Pega todos os subgêneros únicos. Se houver macro filtrado, restringe aos
+  // subgêneros de items cujo macro_generos contém o macro selecionado.
+  const filtered = _projFilterMacro
+    ? items.filter(it => _projetoItemMacros(it).includes(_projFilterMacro))
+    : items;
+  const counts = new Map();
+  filtered.forEach(it => (it.generos || []).forEach(g => {
+    const key = g.toLowerCase();
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }));
+  const subs = Array.from(counts.keys()).sort();
+  let html = `<option value="">Todos os subgêneros</option>`;
+  subs.forEach(s => {
+    const sel = s === _projFilterSub ? ' selected' : '';
+    html += `<option value="${escAttr(s)}"${sel}>${escText(s)} (${counts.get(s)})</option>`;
+  });
+  return html;
+}
+
+function _projetoDecadaOptionsHtml(items) {
+  const counts = new Map();
+  let semAno = 0;
+  items.forEach(it => {
+    const d = _projetoItemDecada(it);
+    if (d == null) semAno += 1;
+    else counts.set(d, (counts.get(d) || 0) + 1);
+  });
+  const decadas = Array.from(counts.keys()).sort((a, b) => a - b);
+  let html = `<option value="">Todas as décadas</option>`;
+  decadas.forEach(d => {
+    const sel = String(d) === _projFilterDecada ? ' selected' : '';
+    html += `<option value="${d}"${sel}>${d}s (${counts.get(d)})</option>`;
+  });
+  if (semAno > 0) {
+    const sel = _projFilterDecada === 'sem-ano' ? ' selected' : '';
+    html += `<option value="sem-ano"${sel}>sem ano (${semAno})</option>`;
+  }
+  return html;
 }
 
 function _projCompletionRatio(it) {
@@ -277,6 +384,21 @@ function renderProjetoItems() {
       it.titulo.toLowerCase().includes(q) ||
       it.artista.toLowerCase().includes(q),
     );
+  }
+
+  if (_projFilterMacro) {
+    items = items.filter(it => _projetoItemMacros(it).includes(_projFilterMacro));
+  }
+  if (_projFilterSub) {
+    items = items.filter(it => (it.generos || []).some(g => g.toLowerCase() === _projFilterSub));
+  }
+  if (_projFilterDecada) {
+    if (_projFilterDecada === 'sem-ano') {
+      items = items.filter(it => !it.ano);
+    } else {
+      const d = parseInt(_projFilterDecada, 10);
+      items = items.filter(it => _projetoItemDecada(it) === d);
+    }
   }
 
   items = _projSortItems(items.slice(), _projSort);
