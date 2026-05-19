@@ -95,6 +95,16 @@ def _get_or_create_artista(conn, nome: str, mbid: Optional[str]) -> str:
         ).fetchone()
         if row:
             return str(row["id"])
+    # Consulta aliases de nome antes do match direto. Cobre casos onde o
+    # Last.fm reporta um nome (ex: "Beatles") que foi registrado como alias
+    # do canônico (ex: "The Beatles") — roteia direto pro canônico em vez
+    # de recriar.
+    row = conn.execute(
+        "SELECT artista_id FROM musicas.artista_nome_alias WHERE lower(nome_lastfm) = lower(%s)",
+        (nome,),
+    ).fetchone()
+    if row:
+        return str(row["artista_id"])
     row = conn.execute(
         "SELECT id FROM musicas.artista WHERE lower(nome) = lower(%s)", (nome,)
     ).fetchone()
@@ -126,6 +136,19 @@ def _get_or_create_album(
         ).fetchone()
         if row:
             return str(row["id"])
+    # Consulta aliases de título antes do match direto. Se o Last.fm está
+    # reportando um título que foi previamente registrado como alias de um
+    # álbum canônico (via merge), roteia direto pro canônico em vez de
+    # recriar um álbum separado.
+    row = conn.execute(
+        """
+        SELECT album_id FROM musicas.album_title_alias
+        WHERE artista_id = %s::uuid AND lower(titulo_lastfm) = lower(%s)
+        """,
+        (artista_id, titulo),
+    ).fetchone()
+    if row:
+        return str(row["album_id"])
     row = conn.execute(
         """
         SELECT id FROM musicas.album
@@ -154,6 +177,60 @@ def _get_or_create_album(
     return str(row["id"])
 
 
+def _bind_musica_to_tracklist(conn, musica_id: str, album_id: str, titulo: str) -> None:
+    """Quando uma musica passa a estar associada a um album_id, tenta linkar
+    ela a uma linha em album_tracks daquele álbum cujo título normalize pro
+    mesmo valor e que ainda esteja sem musica_id. Sem isso, scrobbles chegando
+    depois do sync da tracklist do Spotify ficam órfãos pra sempre.
+
+    Se houver múltiplas posições candidatas (mesma musica em duas posições do
+    álbum, tipo versão mono/stereo ou curta/longa), linka só a UMA — a mais
+    próxima por duração (se a musica tiver duracao_seg). Mono/stereo (∆<5s)
+    fica numa posição só; curta/longa precisa virar musicas separadas via
+    novo scrobble da outra versão (a outra posição fica desmatched)."""
+    if not album_id or not titulo:
+        return
+    from backend.routers.albums import normalize_track_title
+    norm = normalize_track_title(titulo)
+    if not norm:
+        return
+    mu = conn.execute(
+        "SELECT duracao_seg FROM musicas.musica WHERE id = %s::uuid",
+        (musica_id,),
+    ).fetchone()
+    mu_dur = mu["duracao_seg"] if mu else None
+
+    rows = conn.execute(
+        """
+        SELECT disco_numero, posicao, titulo, duracao_ms
+          FROM musicas.album_tracks
+         WHERE album_id = %s::uuid
+           AND musica_id IS NULL
+        """,
+        (album_id,),
+    ).fetchall()
+    matching = [r for r in rows if normalize_track_title(r["titulo"]) == norm]
+    if not matching:
+        return
+    if len(matching) > 1 and mu_dur:
+        chosen = min(
+            matching,
+            key=lambda r: abs(((r["duracao_ms"] or 0) // 1000) - mu_dur),
+        )
+    else:
+        chosen = matching[0]
+    conn.execute(
+        """
+        UPDATE musicas.album_tracks
+           SET musica_id = %s::uuid
+         WHERE album_id = %s::uuid
+           AND disco_numero = %s
+           AND posicao = %s
+        """,
+        (musica_id, album_id, chosen["disco_numero"], chosen["posicao"]),
+    )
+
+
 def _get_or_create_musica(
     conn,
     titulo: str,
@@ -166,6 +243,8 @@ def _get_or_create_musica(
             "SELECT id FROM musicas.musica WHERE lastfm_mbid = %s", (mbid,)
         ).fetchone()
         if row:
+            if album_id:
+                _bind_musica_to_tracklist(conn, str(row["id"]), album_id, titulo)
             return str(row["id"])
     row = conn.execute(
         """
@@ -185,6 +264,7 @@ def _get_or_create_musica(
                 "UPDATE musicas.musica SET album_id = %s::uuid WHERE id = %s AND album_id IS NULL",
                 (album_id, row["id"]),
             )
+            _bind_musica_to_tracklist(conn, str(row["id"]), album_id, titulo)
         return str(row["id"])
     conn.execute(
         """
@@ -200,6 +280,8 @@ def _get_or_create_musica(
         """,
         (artista_id, titulo),
     ).fetchone()
+    if album_id:
+        _bind_musica_to_tracklist(conn, str(row["id"]), album_id, titulo)
     return str(row["id"])
 
 
@@ -316,6 +398,89 @@ def _download_artist_image(conn, artista_id: str, nome: str):
 
 # ── sync logic ────────────────────────────────────────────────────────────────
 
+def _consolidate_albums_into_state():
+    """Para cada artista no banco, agrupa álbuns por aggressive_root(titulo, artista)
+    e mescla os duplicados num canônico.
+
+    Canônico = (tem spotify_id ganha) > (mais plays) > (mais antigo).
+    Atualiza _sync_state.consolidados_* com contagens.
+
+    Usa _do_album_merge importado preguiçosamente pra evitar import circular
+    (lastfm.py → albums.py → ... eventualmente → lastfm.py)."""
+    from collections import defaultdict
+    from backend.routers.albums import aggressive_root, _do_album_merge
+
+    grupos_processados = 0
+    albums_mesclados = 0
+
+    with get_db() as conn:
+        artistas = conn.execute(
+            "SELECT DISTINCT artista_id FROM musicas.album"
+        ).fetchall()
+
+    print(f"[sync] consolidando duplicatas em {len(artistas)} artistas...", flush=True)
+
+    for art in artistas:
+        artista_id = str(art["artista_id"])
+
+        with get_db() as conn:
+            artista_nome_row = conn.execute(
+                "SELECT nome FROM musicas.artista WHERE id = %s::uuid",
+                (artista_id,),
+            ).fetchone()
+            if not artista_nome_row:
+                continue
+            artista_nome = artista_nome_row["nome"]
+
+            albums = conn.execute(
+                """
+                SELECT al.id, al.titulo, al.spotify_id, al.created_at,
+                       (SELECT COUNT(*) FROM musicas.musica m
+                         JOIN musicas.scrobble s ON s.musica_id = m.id
+                         WHERE m.album_id = al.id) AS plays
+                FROM musicas.album al
+                WHERE al.artista_id = %s::uuid
+                """,
+                (artista_id,),
+            ).fetchall()
+
+        if len(albums) < 2:
+            continue
+
+        # Agrupa por raiz (com nome do artista pra strippar prefixo)
+        grupos: dict = defaultdict(list)
+        for al in albums:
+            root = aggressive_root(al["titulo"], artista_nome)
+            if root:  # ignora títulos vazios depois do strip
+                grupos[root].append(al)
+
+        for root, grupo in grupos.items():
+            if len(grupo) < 2:
+                continue
+            # Canônico: mais plays > tem spotify_id > created_at antigo
+            grupo.sort(key=lambda a: (
+                -a["plays"],
+                0 if a["spotify_id"] else 1,
+                a["created_at"] or "",
+            ))
+            canonical = grupo[0]
+            sources = grupo[1:]
+            grupos_processados += 1
+
+            for src in sources:
+                try:
+                    with get_db() as conn:
+                        _do_album_merge(conn, str(src["id"]), str(canonical["id"]))
+                    albums_mesclados += 1
+                    _sync_state["consolidados_albums_mesclados"] = albums_mesclados
+                except Exception as e:
+                    print(f"[sync] falha mesclando {src['titulo']} → {canonical['titulo']}: {e}", flush=True)
+
+            _sync_state["consolidados_grupos"] = grupos_processados
+
+    print(f"[sync] consolidação: {grupos_processados} grupos, {albums_mesclados} álbuns mesclados", flush=True)
+
+
 def _run_sync(username: str, from_ts: Optional[int]):
     touched_artistas: set[str] = set()
     touched_albums: set[str] = set()
@@ -384,19 +549,33 @@ def _run_sync(username: str, from_ts: Optional[int]):
                     from datetime import datetime, timezone
                     ocorrido_em = datetime.fromtimestamp(ts, tz=timezone.utc)
 
+                    # ON CONFLICT (lastfm_ts) DO UPDATE só se a musica atual está
+                    # em album DIFERENTE da musica correta — assim re-routea
+                    # mis-attributions (ex: scrobbles que ficaram em álbum errado
+                    # após merges anteriores) mas preserva drag-merges intra-album.
+                    # `xmax = 0` distingue INSERT de UPDATE no RETURNING.
                     row = conn.execute(
                         """
                         INSERT INTO musicas.scrobble
                             (musica_id, plataforma_id, ocorrido_em, lastfm_ts, data_precisao)
                         VALUES (%s::uuid, %s::uuid, %s, %s, 'hora')
-                        ON CONFLICT (lastfm_ts) WHERE lastfm_ts IS NOT NULL DO NOTHING
-                        RETURNING id
+                        ON CONFLICT (lastfm_ts) WHERE lastfm_ts IS NOT NULL DO UPDATE
+                        SET musica_id = EXCLUDED.musica_id
+                        WHERE EXCLUDED.musica_id IS DISTINCT FROM musicas.scrobble.musica_id
+                          AND (SELECT album_id FROM musicas.musica WHERE id = musicas.scrobble.musica_id)
+                              IS DISTINCT FROM
+                              (SELECT album_id FROM musicas.musica WHERE id = EXCLUDED.musica_id)
+                        RETURNING id, (xmax = 0) AS inserted
                         """,
                         (musica_id, plataforma_id, ocorrido_em, ts),
                     ).fetchone()
 
                     if row:
-                        _sync_state["scrobbles"] += 1
+                        if row["inserted"]:
+                            _sync_state["scrobbles"] += 1
+                        else:
+                            _sync_state.setdefault("re_routed", 0)
+                            _sync_state["re_routed"] += 1
                     _sync_state["page_track_done"] += 1
 
             if page >= total_pages:
@@ -454,6 +633,40 @@ def _run_sync(username: str, from_ts: Optional[int]):
             _sync_state["albums_baixados"] += 1
             time.sleep(0.2)
 
+        # Fase 4 — auto-consolidação de álbuns duplicados (só em full sync)
+        # Agrupa álbuns do mesmo artista por aggressive_root(titulo, artista) e
+        # mescla os duplicados num canônico (escolhido por: tem spotify_id > mais
+        # plays). Pulado em sync incremental pra não surpreender com merges
+        # quando o usuário só queria pegar scrobbles novos.
+        if from_ts is None:
+            _sync_state["phase"] = "consolidando"
+            _sync_state.setdefault("consolidados_grupos", 0)
+            _sync_state.setdefault("consolidados_albums_mesclados", 0)
+            _consolidate_albums_into_state()
+
+        # Fase 5 — reconcile com Spotify (se conectado). Re-roteia scrobbles
+        # recém-importados pra posição canônica certa em álbuns com posições
+        # duplicadas (Getz/Gilberto, Pet Sounds mono/stereo, etc). Roda inline
+        # pra fazer parte da mesma operação de sync. Skip silencioso se Spotify
+        # não estiver conectado.
+        try:
+            with get_db() as conn:
+                connected = bool(_get_config(conn, "spotify_user_refresh_token"))
+            if connected:
+                _sync_state["phase"] = "spotify_reconcile"
+                _sync_state["spotify_reconcile_total"] = 0
+                _sync_state["spotify_reconcile_done"] = 0
+                _sync_state["spotify_reconcile_log"] = ""
+                from backend.routers.spotify_oauth import reconcile_recent_plays
+                def _cb(current, total, last_log):
+                    _sync_state["spotify_reconcile_done"]  = current
+                    _sync_state["spotify_reconcile_total"] = total
+                    _sync_state["spotify_reconcile_log"]   = last_log
+                result = reconcile_recent_plays(progress_cb=_cb)
+                print(f"[sync] spotify reconcile: {result}", flush=True)
+        except Exception as e:
+            print(f"[sync] spotify reconcile skipped: {e}", flush=True)
+
         with get_db() as conn:
             now_ts = int(time.time())
             _set_config(conn, "lastfm_last_sync_ts", str(now_ts))
@@ -462,6 +675,7 @@ def _run_sync(username: str, from_ts: Optional[int]):
         _sync_state["phase"] = "done"
         print(
             f"[sync] concluída — {_sync_state['scrobbles']} scrobbles, "
+            f"{_sync_state.get('re_routed', 0)} re-roteados, "
             f"{_sync_state['novos_artistas']} artistas, "
             f"{_sync_state['novos_albums']} álbuns",
             flush=True,

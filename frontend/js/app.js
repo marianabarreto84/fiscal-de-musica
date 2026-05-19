@@ -1,16 +1,18 @@
 const pages = {
-  dashboard:     renderDashboard,
-  scrobbles:     renderScrobbles,
-  artistas:      renderArtistas,
-  albums:        renderAlbums,
-  stats:         renderStats,
-  settings:      renderSettings,
-  'image-queue': renderImageQueue,
+  dashboard:       renderDashboard,
+  scrobbles:       renderScrobbles,
+  artistas:        renderArtistas,
+  albums:          renderAlbums,
+  stats:           renderStats,
+  projetos:        renderProjetos,
+  settings:        renderSettings,
+  'image-queue':   renderImageQueue,
+  'album-detail':  renderAlbumDetail,
 };
 
 let currentPage = null;
 
-function navigate(page) {
+function navigate(page, params = {}) {
   if (!pages[page]) return;
   document.querySelectorAll('.nav-links a').forEach(a => {
     a.classList.toggle('active', a.dataset.page === page);
@@ -18,8 +20,9 @@ function navigate(page) {
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.getElementById(`page-${page}`)?.classList.add('active');
   currentPage = page;
-  history.replaceState(null, '', `#${page}`);
-  pages[page]();
+  const hash = page === 'album-detail' && params.id ? `album/${params.id}` : page;
+  history.replaceState(null, '', `#${hash}`);
+  pages[page](params);
 }
 
 document.querySelectorAll('.nav-links a').forEach(a => {
@@ -41,6 +44,20 @@ async function checkApiStatus() {
 
 checkApiStatus();
 setInterval(checkApiStatus, 30000);
+applyFadeOuvido();
+
+// Fecha qualquer <details class="action-menu-details"> aberto quando o clique
+// é fora dele. Native <details> não faz isso por padrão.
+document.addEventListener('click', e => {
+  document.querySelectorAll('details.action-menu-details[open]').forEach(d => {
+    if (!d.contains(e.target)) d.removeAttribute('open');
+  });
+});
 
 const hash = location.hash.replace('#', '');
-navigate(pages[hash] ? hash : 'dashboard');
+const [hashPage, ...hashRest] = hash.split('/');
+if (hashPage === 'album' && hashRest[0]) {
+  navigate('album-detail', { id: hashRest[0] });
+} else {
+  navigate(pages[hash] ? hash : 'dashboard');
+}

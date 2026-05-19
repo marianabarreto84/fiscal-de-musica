@@ -453,6 +453,17 @@ canvas { max-width: 100%; }
 .sync-progress-bar-wrap { height: 6px; background: var(--bg4); border-radius: 3px; overflow: hidden; margin: 12px 0 6px; }
 .sync-progress-bar { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.3s; }
 
+/* Badges de status de jobs */
+.job-badge {
+  display: inline-block; margin-left: 8px;
+  font-size: 10px; font-weight: 500; text-transform: uppercase;
+  letter-spacing: 0.05em; padding: 2px 7px; border-radius: 10px;
+  vertical-align: middle;
+}
+.job-badge-running { background: rgba(90,138,186,0.18); color: var(--blue); }
+.job-badge-done    { background: rgba(78,186,122,0.18); color: var(--green); }
+.job-badge-error   { background: rgba(224,85,85,0.18);  color: var(--red); }
+
 /* ── Utilities ── */
 .section-title { font-family: var(--font-display); font-size: 20px; margin-bottom: 16px; }
 .divider { height: 1px; background: var(--border); margin: 28px 0; }
@@ -468,11 +479,472 @@ canvas { max-width: 100%; }
 .mb-4 { margin-bottom: 16px; }
 .w-full { width: 100%; }
 
+/* ── Projetos ── */
+.projetos-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 18px;
+}
+.projeto-card {
+  display: flex;
+  background: var(--bg2); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden; cursor: pointer;
+  transition: all var(--transition);
+}
+.projeto-card:hover { border-color: var(--border2); transform: translateY(-2px); }
+.projeto-card-stripe { width: 6px; flex-shrink: 0; }
+.projeto-card-body { padding: 16px 18px; flex: 1; min-width: 0; }
+.projeto-card-title {
+  font-family: var(--font-display); font-size: 18px; line-height: 1.2;
+  margin-bottom: 6px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.projeto-card-desc {
+  font-size: 12.5px; color: var(--text3); line-height: 1.4;
+  margin-bottom: 14px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.projeto-progress { display: flex; flex-direction: column; gap: 6px; }
+.projeto-progress-bar {
+  height: 6px; background: var(--bg4); border-radius: 3px; overflow: hidden;
+}
+.projeto-progress-fill { height: 100%; transition: width 0.3s ease; }
+.projeto-progress-meta {
+  display: flex; justify-content: space-between;
+  font-size: 11px; color: var(--text3);
+}
+.projeto-progress-meta strong { color: var(--text); font-weight: 500; }
+
+.projeto-detail-header {
+  padding: 32px 40px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.projeto-detail-header-top {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 18px;
+}
+.projeto-detail-actions { display: flex; gap: 8px; }
+.projeto-detail-title { font-family: var(--font-display); font-size: 32px; letter-spacing: -0.5px; line-height: 1.1; }
+.projeto-detail-desc { font-size: 13px; color: var(--text2); margin-top: 8px; max-width: 720px; }
+
+.projeto-filters {
+  display: flex; gap: 12px; align-items: center; margin-bottom: 16px;
+}
+.projeto-filters .search-bar { margin-bottom: 0; }
+.projeto-items-count {
+  font-size: 12px; color: var(--text3); margin-bottom: 14px;
+}
+
+.projeto-album-card { position: relative; }
+.projeto-album-card.is-ouvido { border-color: rgba(78,186,122,0.35); }
+
+/* Toolbar da página de álbuns (busca + selects de filtro/ordem) */
+.albums-toolbar {
+  display: flex; gap: 12px; align-items: center; margin-bottom: 20px;
+}
+.albums-toolbar-select {
+  width: auto; min-width: 160px; flex-shrink: 0;
+}
+
+/* Card de álbum sem plays — visual mais discreto */
+.music-card.is-no-plays { opacity: 0.78; }
+.music-card.is-no-plays:hover { opacity: 1; }
+.music-card.is-no-plays .music-cover {
+  background: var(--bg2);
+}
+.music-no-plays {
+  font-size: 11px; color: var(--text3); margin-top: 4px;
+  font-style: italic;
+}
+
+/* "Ouvi N vezes" no modal do álbum */
+.album-listen-count {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; margin-bottom: 18px;
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 13px; color: var(--text);
+}
+.album-listen-count-icon {
+  font-size: 22px; color: var(--accent); line-height: 1;
+}
+.album-listen-count-hint {
+  font-size: 11px; color: var(--text3); margin-top: 2px;
+}
+
+/* Drag-and-drop de faixas */
+.faixa-row { transition: background 0.15s, opacity 0.15s, border-color 0.15s; cursor: grab; }
+.faixa-row:active { cursor: grabbing; }
+.faixa-row.faixa-dragging { opacity: 0.4; }
+.faixa-row.faixa-drop-target {
+  background: rgba(78,186,122,0.12);
+  outline: 2px dashed rgba(78,186,122,0.5);
+  outline-offset: -2px;
+}
+
+/* Dropdown de ações (kebab menu) no header do modal */
+.action-menu-details { position: relative; }
+.action-menu-details > summary {
+  list-style: none;          /* Esconde ▶ default */
+  cursor: pointer;
+}
+.action-menu-details > summary::-webkit-details-marker { display: none; }
+.action-menu-details > summary::marker               { display: none; }
+.action-menu {
+  position: absolute; right: 0; top: calc(100% + 6px);
+  z-index: 1100;
+  min-width: 240px;
+  background: var(--bg2); border: 1px solid var(--border2);
+  border-radius: var(--radius);
+  padding: 6px;
+  box-shadow: 0 6px 24px rgba(0,0,0,0.5);
+  display: flex; flex-direction: column;
+}
+.action-menu-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: 4px;
+  background: transparent; border: none; cursor: pointer;
+  color: var(--text2); font-family: var(--font-body); font-size: 13px;
+  text-align: left; width: 100%;
+  transition: background 0.12s, color 0.12s;
+}
+.action-menu-item svg { width: 15px; height: 15px; fill: currentColor; flex-shrink: 0; }
+.action-menu-item:hover { background: var(--bg3); color: var(--text); }
+.action-menu-item-danger { color: var(--red); }
+.action-menu-item-danger:hover { background: rgba(224,85,85,0.12); color: var(--red); }
+.action-menu-divider {
+  height: 1px; background: var(--border); margin: 5px 4px;
+}
+
+/* Aliases (versões alternativas no Spotify) no modal de álbum */
+.album-aliases {
+  background: var(--bg3); border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px; margin-bottom: 18px;
+}
+.album-aliases-title {
+  font-size: 11px; color: var(--text3);
+  text-transform: uppercase; letter-spacing: 0.08em;
+  margin-bottom: 10px;
+}
+.album-aliases-list {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.album-alias-row {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px;
+}
+.album-alias-badge {
+  display: inline-block; padding: 2px 8px; border-radius: 10px;
+  background: rgba(213,16,7,0.15); color: var(--accent);
+  font-size: 10px; font-weight: 500; text-transform: uppercase;
+  letter-spacing: 0.05em; flex-shrink: 0;
+}
+.album-alias-badge-secondary {
+  background: rgba(255,255,255,0.06); color: var(--text2);
+}
+.album-alias-id {
+  font-family: ui-monospace, monospace; font-size: 11px;
+  color: var(--text2); flex: 1; overflow: hidden; text-overflow: ellipsis;
+  cursor: pointer; user-select: all;
+}
+.album-alias-id:hover { color: var(--text); }
+.album-alias-row-empty { padding: 4px 0; }
+
+.spotify-candidate-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.03); border: 1px solid var(--border2);
+}
+.spotify-candidate-row:hover { background: rgba(255,255,255,0.05); }
+.spotify-candidate-info { flex: 1; min-width: 0; }
+.spotify-candidate-title { font-size: 13px; color: var(--text); font-weight: 500; }
+.spotify-candidate-meta { font-size: 11px; color: var(--text3); margin-top: 2px; }
+.album-alias-link {
+  color: var(--text3); text-decoration: none; font-size: 13px; line-height: 1;
+}
+.album-alias-link:hover { color: var(--text); }
+
+/* Linha de resultado na busca de merge target */
+.merge-target-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: var(--radius-sm);
+  cursor: pointer; transition: background 0.15s;
+}
+.merge-target-row:hover { background: var(--bg3); }
+
+/* Lista de duplicatas detectadas */
+.dup-list {
+  display: flex; flex-direction: column; gap: 6px;
+  max-height: 360px; overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 6px;
+}
+.dup-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 4px;
+  cursor: pointer; transition: background 0.15s;
+}
+.dup-row:hover { background: var(--bg3); }
+.dup-checkbox { cursor: pointer; flex-shrink: 0; }
+.dup-cover {
+  width: 40px; height: 40px; border-radius: 4px;
+  background: var(--bg3); flex-shrink: 0; overflow: hidden;
+  display: flex; align-items: center; justify-content: center;
+}
+.dup-cover img { width: 100%; height: 100%; object-fit: cover; }
+.dup-cover-placeholder { font-size: 18px; color: var(--text3); }
+.dup-info { flex: 1; min-width: 0; }
+.dup-titulo {
+  font-size: 13px; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-bottom: 2px;
+}
+.dup-meta { font-size: 11px; color: var(--text3); }
+
+/* Header de disco (multi-disc albums tipo Definitely Maybe) */
+.disc-header {
+  font-size: 11px; color: var(--text3);
+  text-transform: uppercase; letter-spacing: 0.1em;
+  font-weight: 500;
+  padding: 14px 6px 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+}
+.disc-header:first-child { padding-top: 4px; }
+.disc-header-orphans { color: var(--text3); font-style: italic; text-transform: none; letter-spacing: 0; }
+
+/* Faixa Spotify ainda não scrobblada — discreta, sem drag */
+.faixa-row.faixa-not-scrobbled {
+  cursor: default;
+  opacity: 0.55;
+}
+.faixa-row.faixa-not-scrobbled:hover { opacity: 0.75; background: transparent; }
+.faixa-row.faixa-not-scrobbled .top-rank,
+.faixa-row.faixa-not-scrobbled .top-title { color: var(--text3); }
+.faixa-row.faixa-not-scrobbled .top-title { font-style: italic; }
+
+/* Faixas <30s — Last.fm/Spotify não scrobblam, mas a usuária ouve. Mostra
+   normalmente, só com plays vazios. Sutilmente esmaecida pra diferenciar do
+   resto, mas sem mensagem de "não scrobblada" (não é falta dela). */
+.faixa-row.faixa-too-short { opacity: 0.75; cursor: default; }
+.faixa-row.faixa-too-short:hover { background: transparent; }
+.faixa-row.faixa-too-short .top-rank { color: var(--text3); }
+
+/* Badge "ouvi N vezes" no card do álbum */
+.music-listen-badge {
+  font-size: 11px; color: var(--green);
+  margin-top: 3px; font-weight: 500;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.music-listen-badge::before {
+  content: "✓"; font-size: 11px;
+}
+
+/* Badge da tracklist Spotify no card do álbum (X/Y faixas) */
+.music-tracklist-badge {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 4px;
+  font-size: 10px; color: var(--text3);
+}
+.music-tracklist-bar {
+  flex: 1; height: 4px;
+  background: var(--bg4); border-radius: 2px; overflow: hidden;
+}
+.music-tracklist-fill {
+  height: 100%; background: var(--text2);
+  transition: width 0.3s ease;
+}
+.music-tracklist-text {
+  font-size: 10px; color: var(--text3);
+  font-variant-numeric: tabular-nums;
+}
+.music-tracklist-badge.is-completo .music-tracklist-fill { background: var(--green); }
+.music-tracklist-badge.is-completo .music-tracklist-text { color: var(--green); font-weight: 500; }
+
+/* Fade ouvido (estilo Letterboxd, igual ao fiscal-de-filmes) */
+body.fade-ouvido .projeto-album-card.is-ouvido {
+  opacity: 0.32;
+  filter: grayscale(0.4);
+  transition: opacity var(--transition), filter var(--transition);
+}
+body.fade-ouvido .projeto-album-card.is-ouvido:hover {
+  opacity: 1;
+  filter: none;
+}
+
+.fade-ouvido-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--bg3); color: var(--text2);
+  border: 1px solid var(--border2);
+  padding: 8px; border-radius: var(--radius-sm);
+  cursor: pointer; transition: all var(--transition);
+}
+.fade-ouvido-toggle:hover { color: var(--text); border-color: rgba(255,255,255,0.2); }
+.fade-ouvido-toggle svg { width: 16px; height: 16px; fill: currentColor; }
+.fade-ouvido-toggle.active {
+  color: var(--green);
+  border-color: rgba(78,186,122,0.4);
+  background: rgba(78,186,122,0.08);
+}
+.ouvido-badge {
+  position: absolute; top: 6px; right: 6px;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: var(--green); color: #0d0d0d;
+  display: flex; align-items: center; justify-content: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.5);
+}
+.ouvido-badge svg { width: 14px; height: 14px; fill: currentColor; }
+.rank-badge {
+  position: absolute; bottom: 6px; left: 6px;
+  font-size: 10px; padding: 2px 7px;
+  background: rgba(0,0,0,0.7); color: var(--text2);
+  border-radius: 10px; font-weight: 500;
+}
+
+.projeto-album-actions {
+  display: flex; gap: 6px; margin-top: 6px; align-items: center;
+}
+.spotify-link {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; color: #1ed760; text-decoration: none;
+  padding: 3px 8px; border-radius: 10px;
+  background: rgba(30,215,96,0.1); border: 1px solid rgba(30,215,96,0.2);
+  transition: all var(--transition);
+}
+.spotify-link:hover { background: rgba(30,215,96,0.2); }
+.spotify-link svg { width: 12px; height: 12px; fill: currentColor; }
+.btn-icon-sm {
+  margin-left: auto;
+  padding: 4px; background: transparent; color: var(--text3);
+  border: none; cursor: pointer; border-radius: 4px;
+  display: flex; align-items: center; transition: all var(--transition);
+}
+.btn-icon-sm svg { width: 14px; height: 14px; fill: currentColor; }
+.btn-icon-sm:hover { color: var(--red); background: rgba(255,255,255,0.05); }
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--border2); }
+
+/* ── Album detail page ── */
+.album-detail {
+  max-width: 820px;
+  margin: 0 auto;
+  padding: 32px 40px 80px;
+}
+.album-detail-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+.album-detail-meta {
+  display: flex;
+  gap: 20px;
+  align-items: center;
+  margin-bottom: 36px;
+  padding-bottom: 24px;
+  border-bottom: 1px solid var(--border);
+}
+.album-detail-cover {
+  width: 120px;
+  height: 120px;
+  object-fit: cover;
+  border-radius: 10px;
+  border: 1px solid var(--border2);
+}
+.album-detail-cover-fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg3);
+  color: var(--text3);
+  font-size: 48px;
+}
+.album-detail-title {
+  font-family: var(--font-display);
+  font-size: 32px;
+  margin: 0 0 4px;
+  line-height: 1.15;
+}
+.album-detail-subtitle {
+  color: var(--text2);
+  font-size: 15px;
+  margin-bottom: 6px;
+}
+.album-detail-stats {
+  color: var(--accent);
+  font-size: 13px;
+}
+.album-notas-section { margin-top: 8px; }
+.album-notas-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+.album-notas-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  margin: 0;
+}
+.album-notas-rendered {
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--text);
+}
+.album-notas-rendered h1 { font-family: var(--font-display); font-size: 26px; margin: 28px 0 12px; }
+.album-notas-rendered h2 { font-family: var(--font-display); font-size: 21px; margin: 24px 0 10px; }
+.album-notas-rendered h3 { font-family: var(--font-display); font-size: 18px; margin: 20px 0 8px; }
+.album-notas-rendered p  { margin: 0 0 14px; }
+.album-notas-rendered ul,
+.album-notas-rendered ol { margin: 0 0 14px; padding-left: 24px; }
+.album-notas-rendered li { margin-bottom: 4px; }
+.album-notas-rendered blockquote {
+  border-left: 3px solid var(--accent);
+  background: var(--bg3);
+  margin: 0 0 14px;
+  padding: 8px 14px;
+  color: var(--text2);
+  border-radius: 0 6px 6px 0;
+}
+.album-notas-rendered a { color: var(--accent); text-decoration: underline; }
+.album-notas-rendered code {
+  background: var(--bg3);
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+.album-notas-rendered pre {
+  background: var(--bg3);
+  padding: 12px 14px;
+  border-radius: 6px;
+  overflow-x: auto;
+  margin: 0 0 14px;
+}
+.album-notas-rendered pre code { background: transparent; padding: 0; }
+.album-notas-rendered img { max-width: 100%; border-radius: 6px; }
+.album-notas-rendered hr { border: 0; border-top: 1px solid var(--border); margin: 24px 0; }
+.album-notas-editor {
+  width: 100%;
+  min-height: 360px;
+  background: var(--bg2);
+  color: var(--text);
+  border: 1px solid var(--border2);
+  border-radius: 8px;
+  padding: 14px 16px;
+  font-family: ui-monospace, "Cascadia Code", "Consolas", monospace;
+  font-size: 14px;
+  line-height: 1.55;
+  resize: vertical;
+}
+.album-notas-editor:focus { outline: none; border-color: var(--accent); }
 
 /* ── Responsive ── */
 @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }

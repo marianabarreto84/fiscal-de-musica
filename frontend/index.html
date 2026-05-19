@@ -37,6 +37,10 @@
           <svg viewBox="0 0 24 24"><path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-5 14H7v-2h7v2zm3-4H7v-2h10v2zm0-4H7V7h10v2z"/></svg>
           <span>Estatísticas</span>
         </a></li>
+        <li><a href="#" data-page="projetos">
+          <svg viewBox="0 0 24 24"><path d="M3 5h6l2 2h10v12H3V5zm0 2v10h18V9h-9.41l-2-2H3z" opacity=".4"/><path d="M9 11h12v2H9zm0 4h12v2H9zm-4-4h2v6H5z"/></svg>
+          <span>Projetos</span>
+        </a></li>
         <li><a href="#" data-page="settings">
           <svg viewBox="0 0 24 24"><path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/></svg>
           <span>Configurações</span>
@@ -58,6 +62,8 @@
       <div id="page-stats"      class="page"></div>
       <div id="page-settings"   class="page"></div>
       <div id="page-image-queue" class="page"></div>
+      <div id="page-projetos"   class="page"></div>
+      <div id="page-album-detail" class="page"></div>
     </main>
   </div>
 
@@ -66,17 +72,21 @@
   </div>
   <div id="toast-container"></div>
 
+  <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
   <script src="/js/api.js"></script>
   <script src="/js/utils.js"></script>
   <script src="/js/modal.js"></script>
   <script src="/js/image-helpers.js"></script>
+  <script src="/js/jobs.js"></script>
   <script src="/js/pages/dashboard.js"></script>
   <script src="/js/pages/scrobbles.js"></script>
   <script src="/js/pages/artistas.js"></script>
   <script src="/js/pages/albums.js"></script>
+  <script src="/js/pages/album-detail.js"></script>
   <script src="/js/pages/stats.js"></script>
   <script src="/js/pages/settings.js"></script>
   <script src="/js/pages/image-queue.js"></script>
+  <script src="/js/pages/projetos.js"></script>
   <script src="/js/app.js"></script>
 </body>
 </html>

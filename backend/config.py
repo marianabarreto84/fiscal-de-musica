@@ -9,6 +9,8 @@ _db = os.getenv("DATABASE_URL", "postgresql://postgres@localhost/fiscal")
 DATABASE_URL = _db.replace("postgresql+psycopg://", "postgresql://")
 
 LASTFM_API_KEY = os.getenv("LAST_FM_API_KEY", "")
+SPOTIFY_CLIENT_ID     = os.getenv("SPOTIFY_CLIENT_ID", "")
+SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "")
 PORT = int(os.getenv("PORT", "8002"))
 
 DATA_DIR = BASE_DIR / "data"

@@ -1,6 +1,9 @@
 const SETTINGS_SECTIONS = [
-  { id: 'updates', label: 'Atualização' },
-  { id: 'account', label: 'Conta Last.fm' },
+  { id: 'updates',  label: 'Atualização' },
+  { id: 'tarefas',  label: 'Tarefas' },
+  { id: 'calculos', label: 'Cálculos' },
+  { id: 'account',  label: 'Conta Last.fm' },
+  { id: 'spotify',  label: 'Spotify' },
 ];
 
 let currentSettingsSection = 'updates';
@@ -52,8 +55,88 @@ async function switchSettingsSection(id) {
 async function loadSettingsSection(id) {
   const el = document.getElementById('settings-content');
   if (!el) return;
-  if (id === 'updates') await renderUpdatesSection(el);
-  else if (id === 'account') await renderAccountSection(el);
+  if (id === 'updates')        await renderUpdatesSection(el);
+  else if (id === 'tarefas')   await renderTarefasSection(el);
+  else if (id === 'calculos')  await renderCalculosSection(el);
+  else if (id === 'account')   await renderAccountSection(el);
+  else if (id === 'spotify')   await renderSpotifySection(el);
+}
+
+async function renderSpotifySection(el) {
+  let status;
+  try {
+    status = await api.get('/spotify/oauth/status');
+  } catch (e) {
+    status = { connected: false };
+  }
+  const connectedAt = status.connected_at
+    ? new Date(status.connected_at).toLocaleString('pt-BR')
+    : null;
+
+  el.innerHTML = `
+    <div class="settings-section">
+      <div class="settings-section-title">Conexão com Spotify</div>
+      <div class="settings-section-desc">
+        Usado <em>apenas</em> pra desambiguar plays em álbuns que têm posições com mesmo nome
+        de faixa (ex: Getz/Gilberto com 2 versões de "Girl from Ipanema"). O Last.fm continua
+        sendo a única fonte que cria scrobbles. Spotify só é consultado pra rotear cada
+        scrobble pra posição canônica certa via <code>spotify_track_id</code>.
+        <br><br>
+        <strong>Limitação:</strong> Spotify só expõe as últimas 50 plays — só funciona pra
+        plays recentes. Plays antigas continuam como estão.
+      </div>
+
+      <div class="settings-row">
+        <div>
+          <div class="settings-row-label">${status.connected ? 'Conectado ✓' : 'Não conectado'}</div>
+          ${connectedAt ? `<div class="settings-row-value">desde ${connectedAt}</div>` : ''}
+        </div>
+        ${status.connected
+          ? `<button class="btn btn-secondary" onclick="disconnectSpotify()">Desconectar</button>`
+          : `<button class="btn btn-primary" onclick="connectSpotify()">Conectar Spotify</button>`
+        }
+      </div>
+
+      ${status.connected ? `
+        <div class="settings-row" style="margin-top:8px">
+          <div>
+            <div class="settings-row-label">Reconciliar plays recentes</div>
+            <div class="settings-row-value">
+              Compara últimas 50 plays do Spotify com scrobbles do Last.fm e re-roteia
+              quando a posição canônica diverge.
+            </div>
+          </div>
+          <button class="btn btn-primary" onclick="runSpotifyReconcile()">Reconciliar agora</button>
+        </div>
+      ` : ''}
+    </div>
+  `;
+}
+
+function connectSpotify() {
+  // abre OAuth em nova aba (Spotify retorna pra /api/spotify/oauth/callback que fecha sozinha)
+  window.open('/api/spotify/oauth/start', '_blank');
+  toast('Autorize no Spotify e volte. Depois recarregue esta página.');
+}
+
+async function disconnectSpotify() {
+  if (!confirm('Desconectar Spotify? Tokens serão apagados.')) return;
+  try {
+    await api.del('/spotify/oauth');
+    toast('Desconectado');
+    renderSpotifySection(document.getElementById('settings-content'));
+  } catch (e) {
+    toast('Erro: ' + e.message, 'error');
+  }
+}
+
+async function runSpotifyReconcile() {
+  try {
+    await api.post('/spotify/reconcile/start', {});
+    runJob('spotify_reconcile');
+  } catch (e) {
+    toast('Erro: ' + e.message, 'error');
+  }
 }
 
 // ── Atualização ───────────────────────────────────────────────────────────────
@@ -128,6 +211,190 @@ async function renderUpdatesSection(el) {
       </div>
     </div>
   `;
+}
+
+// ── Tarefas em background ─────────────────────────────────────────────────────
+
+async function renderTarefasSection(el) {
+  let jobs = [];
+  try {
+    jobs = await api.listJobs();
+  } catch (e) {
+    el.innerHTML = `<div class="settings-section"><div class="text-muted">Erro ao listar tarefas: ${escText(e.message)}</div></div>`;
+    return;
+  }
+  // Esconde jobs dinâmicos por álbum (recalibrar_album_*) — esses são
+  // disparados pelo modal e poluiriam essa lista.
+  jobs = jobs.filter(j => !j.name.startsWith('recalibrar_album_'));
+
+  el.innerHTML = `
+    <div class="settings-section">
+      <div class="settings-section-title">Tarefas em background</div>
+      <div class="settings-section-desc">
+        Operações longas (sincronização com APIs externas, downloads em lote)
+        rodam aqui sem bloquear a UI. Clique em "Executar" e acompanhe a barra
+        de progresso. Pode rodar várias vezes — todas as tarefas são idempotentes.
+      </div>
+      <div id="tarefas-list">
+        ${jobs.length
+          ? jobs.map(jobRowHtml).join('')
+          : `<div class="text-muted" style="font-size:13px">Nenhuma tarefa registrada.</div>`
+        }
+      </div>
+    </div>
+  `;
+
+  el.querySelectorAll('[data-job-run]').forEach(b => {
+    b.addEventListener('click', async () => {
+      await runJob(b.dataset.jobRun);
+      // Quando o modal fecha, atualiza a lista pra refletir last_log/phase recente
+      renderTarefasSection(el);
+    });
+  });
+}
+
+function jobRowHtml(j) {
+  let badge = '';
+  if (j.phase === 'running')      badge = `<span class="job-badge job-badge-running">rodando</span>`;
+  else if (j.phase === 'done')    badge = `<span class="job-badge job-badge-done">última: ok</span>`;
+  else if (j.phase === 'error')   badge = `<span class="job-badge job-badge-error">erro</span>`;
+
+  const subline = j.last_log
+    ? `<span style="font-family:ui-monospace,monospace">${escText(j.last_log)}</span>`
+    : '<span style="font-style:italic">nunca executada</span>';
+
+  return `
+    <div class="settings-row" style="align-items:flex-start">
+      <div style="flex:1;min-width:0">
+        <div class="settings-row-label">${escText(j.title)} ${badge}</div>
+        <div class="settings-row-desc" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${subline}</div>
+      </div>
+      <button class="btn btn-secondary btn-sm" data-job-run="${escAttr(j.name)}">
+        ${j.phase === 'running' ? 'Ver progresso' : 'Executar'}
+      </button>
+    </div>
+  `;
+}
+
+// ── Cálculos ──────────────────────────────────────────────────────────────────
+
+async function renderCalculosSection(el) {
+  let pct = 80;
+  let apenasDisco1 = false;
+  try {
+    const r = await api.getSetting('ouvido_threshold_pct');
+    if (r && r.value) pct = Math.max(50, Math.min(100, parseInt(r.value, 10) || 80));
+  } catch {}
+  try {
+    const r = await api.getSetting('ouvido_apenas_disco_1');
+    apenasDisco1 = r && String(r.value).toLowerCase() === 'true';
+  } catch {}
+  _calculosOriginalPct = pct;
+  _calculosCurrentPct  = pct;
+
+  el.innerHTML = `
+    <div class="settings-section">
+      <div class="settings-section-title">Quando considerar um álbum "ouvido"</div>
+      <div class="settings-section-desc">
+        Um álbum conta como "ouvido inteiro 1 vez" quando você scrobblou cada uma
+        das <strong>X% das faixas mais tocadas</strong> dele pelo menos 1 vez.
+        O número de "vezes ouvi este álbum" é o play count da faixa <em>menos</em>
+        ouvida desse top X%.
+      </div>
+
+      <div class="settings-row" style="flex-direction:column;align-items:stretch;gap:14px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <div class="settings-row-label">
+            Considerar top <strong id="calculos-pct-label" style="color:var(--accent)">${pct}%</strong> das faixas mais tocadas
+          </div>
+          <button class="btn btn-primary btn-sm" id="calculos-save-btn" disabled onclick="saveOuvidoThreshold()">
+            Salvar
+          </button>
+        </div>
+        <input type="range" min="50" max="100" step="5" value="${pct}"
+               id="calculos-pct-slider"
+               oninput="onCalculosSliderChange(this.value)"
+               style="width:100%;accent-color:var(--accent)">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--text3)">
+          <span>50%</span><span>75%</span><span>100%</span>
+        </div>
+      </div>
+
+      <div class="settings-row" style="margin-top:8px;align-items:flex-start">
+        <label style="display:flex;gap:10px;align-items:flex-start;cursor:pointer;width:100%">
+          <input type="checkbox" id="calculos-apenas-disco-1"
+                 ${apenasDisco1 ? 'checked' : ''}
+                 onchange="saveOuvidoApenasDisco1(this.checked)"
+                 style="margin-top:3px;cursor:pointer">
+          <div>
+            <div class="settings-row-label">Considerar apenas o primeiro disco</div>
+            <div class="settings-row-desc">
+              Em álbuns multi-disco (deluxe editions, anniversary etc.), ignora as
+              faixas dos discos extras no cálculo de "ouvi este álbum". Útil quando
+              você quer dar o álbum como ouvido sem precisar passar pelas faixas bonus.
+              Não afeta álbuns de disco único.
+            </div>
+          </div>
+        </label>
+      </div>
+
+      <div class="settings-row" style="margin-top:8px;align-items:flex-start">
+        <div>
+          <div class="settings-row-label">Como funciona com álbum de 1 faixa</div>
+          <div class="settings-row-desc">
+            Sempre conta a única faixa, ignorando o threshold. Singles "ouvidos"
+            quando têm pelo menos 1 scrobble.
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-row" style="margin-top:8px;align-items:flex-start">
+        <div>
+          <div class="settings-row-label">Exemplo</div>
+          <div class="settings-row-desc">
+            Álbum de 10 faixas, threshold 80% → consideramos as 8 mais ouvidas.
+            Se a 8ª mais ouvida tem 4 plays, você "ouviu este álbum" 4 vezes.
+            Faixas que você sempre pula (no <em>bottom</em> 20%) são ignoradas.
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+let _calculosOriginalPct = null;
+let _calculosCurrentPct  = null;
+
+function onCalculosSliderChange(v) {
+  const pct = parseInt(v, 10);
+  const label = document.getElementById('calculos-pct-label');
+  if (label) label.textContent = `${pct}%`;
+  _calculosCurrentPct = pct;
+  const btn = document.getElementById('calculos-save-btn');
+  if (btn) btn.disabled = (pct === _calculosOriginalPct);
+}
+
+async function saveOuvidoApenasDisco1(checked) {
+  try {
+    await api.setSetting('ouvido_apenas_disco_1', checked ? 'true' : 'false');
+    toast(checked ? 'Considerando só o primeiro disco' : 'Considerando todos os discos');
+  } catch (e) {
+    toast('Erro: ' + e.message, 'error');
+  }
+}
+
+async function saveOuvidoThreshold() {
+  const pct = _calculosCurrentPct;
+  if (pct == null) return;
+  try {
+    await api.setSetting('ouvido_threshold_pct', String(pct));
+    _calculosOriginalPct = pct;
+    const btn = document.getElementById('calculos-save-btn');
+    if (btn) btn.disabled = true;
+    toast(`Threshold salvo: ${pct}%`);
+  } catch (e) {
+    toast('Erro: ' + e.message, 'error');
+  }
 }
 
 // ── Conta Last.fm ─────────────────────────────────────────────────────────────
@@ -307,12 +574,37 @@ function updateSyncModal(state) {
     detail = tot > 0
       ? `${state.albums_baixados || 0} de ${tot} álbuns`
       : 'Nenhum álbum pendente';
+  } else if (phase === 'consolidando') {
+    label = 'Consolidando álbuns duplicados';
+    pct = 98;
+    const grupos = state.consolidados_grupos || 0;
+    const mesclados = state.consolidados_albums_mesclados || 0;
+    detail = mesclados > 0
+      ? `${mesclados} álbum(ns) mesclados em ${grupos} grupo(s)`
+      : 'analisando duplicatas...';
+  } else if (phase === 'spotify_reconcile') {
+    label = 'Reconciliando com Spotify';
+    pct = 99;
+    const tot = state.spotify_reconcile_total || 0;
+    const done = state.spotify_reconcile_done || 0;
+    detail = tot > 0
+      ? `${done} de ${tot} plays — ${state.spotify_reconcile_log || ''}`
+      : (state.spotify_reconcile_log || 'buscando últimas plays...');
   } else if (phase === 'done') {
     label = mode === 'download_pending' ? '✓ Download concluído' : '✓ Sincronização concluída';
     pct = 100;
-    detail = mode === 'download_pending'
-      ? `${state.novos_artistas || 0} artistas • ${state.novos_albums || 0} álbuns baixados`
-      : `+${(state.scrobbles || 0).toLocaleString('pt-BR')} scrobbles • ${state.novos_artistas || 0} artistas • ${state.novos_albums || 0} álbuns`;
+    if (mode === 'download_pending') {
+      detail = `${state.novos_artistas || 0} artistas • ${state.novos_albums || 0} álbuns baixados`;
+    } else {
+      const parts = [
+        `+${(state.scrobbles || 0).toLocaleString('pt-BR')} scrobbles`,
+        `${state.novos_artistas || 0} artistas`,
+        `${state.novos_albums || 0} álbuns`,
+      ];
+      if (state.re_routed) parts.push(`${state.re_routed.toLocaleString('pt-BR')} re-roteados`);
+      if (state.consolidados_albums_mesclados) parts.push(`${state.consolidados_albums_mesclados} duplicados mesclados`);
+      detail = parts.join(' • ');
+    }
   } else if (phase === 'error') {
     label = mode === 'download_pending' ? 'Erro no download' : 'Erro na sincronização';
     pct = 0;
