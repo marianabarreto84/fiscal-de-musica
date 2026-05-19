@@ -25,16 +25,35 @@ function navigate(page, params = {}) {
   pages[page](params);
 }
 
+const sidebarEl = document.getElementById('sidebar');
+const mobileOverlay = document.getElementById('mobile-nav-overlay');
+function closeMobileNav() {
+  sidebarEl?.classList.remove('mobile-open');
+  mobileOverlay?.classList.remove('active');
+}
+function openMobileNav() {
+  sidebarEl?.classList.add('mobile-open');
+  mobileOverlay?.classList.add('active');
+}
+
 document.querySelectorAll('.nav-links a').forEach(a => {
-  a.addEventListener('click', e => { e.preventDefault(); navigate(a.dataset.page); });
+  a.addEventListener('click', e => { e.preventDefault(); navigate(a.dataset.page); closeMobileNav(); });
 });
 
-const sidebarEl = document.getElementById('sidebar');
 if (localStorage.getItem('sidebar-collapsed') === '1') sidebarEl?.classList.add('collapsed');
 document.getElementById('sidebar-toggle')?.addEventListener('click', () => {
   const collapsed = sidebarEl.classList.toggle('collapsed');
   localStorage.setItem('sidebar-collapsed', collapsed ? '1' : '0');
 });
+
+document.getElementById('mobile-nav-toggle')?.addEventListener('click', openMobileNav);
+mobileOverlay?.addEventListener('click', closeMobileNav);
+
+function syncMobileStatusDot() {
+  const main = document.querySelector('#api-status .status-dot');
+  const mobile = document.querySelector('.mobile-status-dot');
+  if (main && mobile) mobile.className = main.className.replace('status-dot', 'mobile-status-dot status-dot');
+}
 
 async function checkApiStatus() {
   const dot = document.querySelector('#api-status .status-dot');
@@ -47,6 +66,7 @@ async function checkApiStatus() {
     if (dot) dot.className = 'status-dot err';
     if (txt) txt.textContent = 'sem conexão';
   }
+  syncMobileStatusDot();
 }
 
 checkApiStatus();

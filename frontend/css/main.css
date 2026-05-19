@@ -969,12 +969,50 @@ body.fade-ouvido .projeto-album-card.is-ouvido:hover {
 }
 .album-notas-editor:focus { outline: none; border-color: var(--accent); }
 
+/* ── Mobile header (hambúrguer) ── */
+#mobile-header { display: none; }
+#mobile-nav-overlay { display: none; }
+
 /* ── Responsive ── */
 @media (max-width: 900px) { .charts-grid { grid-template-columns: 1fr; } }
 @media (max-width: 640px) {
-  #sidebar { width: 60px; }
-  .logo-text, .nav-links li a span { display: none; }
-  .nav-links li a { justify-content: center; padding: 14px; }
+  #app { flex-direction: column; }
+  #mobile-header {
+    display: flex; align-items: center; gap: 12px;
+    height: 52px; padding: 0 16px;
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; z-index: 20;
+  }
+  #mobile-nav-toggle {
+    background: transparent; border: none; cursor: pointer;
+    color: var(--text); padding: 6px; margin-left: -6px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #mobile-nav-toggle svg { width: 22px; height: 22px; }
+  .mobile-logo { font-family: var(--font-display); font-size: 18px; color: var(--text); }
+  .mobile-logo .logo-icon { font-size: 18px; margin-right: 4px; }
+  .mobile-status-dot { margin-left: auto; }
+
+  #sidebar {
+    position: fixed; top: 0; left: 0; bottom: 0;
+    width: 240px; z-index: 40;
+    transform: translateX(-100%);
+    transition: transform var(--transition);
+  }
+  #sidebar.mobile-open { transform: translateX(0); }
+  #sidebar .sidebar-toggle { display: none; }
+
+  #mobile-nav-overlay {
+    display: block;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 30;
+    opacity: 0; pointer-events: none;
+    transition: opacity var(--transition);
+  }
+  #mobile-nav-overlay.active { opacity: 1; pointer-events: auto; }
+
+  #content { width: 100%; }
   .page-header, .page-body { padding-left: 20px; padding-right: 20px; }
   .diary-range-bar { padding-left: 20px; padding-right: 20px; }
 }
