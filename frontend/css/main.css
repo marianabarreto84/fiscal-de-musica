@@ -37,6 +37,7 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  transition: width var(--transition);
 }
 
 .logo {
@@ -68,6 +69,28 @@ html, body { height: 100%; background: var(--bg); color: var(--text); font-famil
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text3); transition: background 0.3s; }
 .status-dot.ok  { background: var(--green); }
 .status-dot.err { background: var(--red); }
+
+.sidebar-toggle {
+  display: flex; align-items: center; gap: 8px;
+  width: 100%; padding: 6px 0; margin-bottom: 12px;
+  background: transparent; border: none;
+  font-family: inherit; font-size: 12px; color: var(--text3);
+  cursor: pointer; transition: color var(--transition);
+}
+.sidebar-toggle:hover { color: var(--text); }
+.sidebar-toggle svg { width: 14px; height: 14px; fill: currentColor; flex-shrink: 0; transition: transform var(--transition); }
+
+#sidebar.collapsed { width: 60px; }
+#sidebar.collapsed .logo { justify-content: center; padding: 28px 0 24px; }
+#sidebar.collapsed .logo-text,
+#sidebar.collapsed .nav-links li a span,
+#sidebar.collapsed .sidebar-toggle span,
+#sidebar.collapsed .api-status .status-text { display: none; }
+#sidebar.collapsed .nav-links li a { justify-content: center; padding: 14px; }
+#sidebar.collapsed .nav-bottom { padding: 20px 0; }
+#sidebar.collapsed .sidebar-toggle { justify-content: center; }
+#sidebar.collapsed .sidebar-toggle svg { transform: rotate(180deg); }
+#sidebar.collapsed .api-status { justify-content: center; }
 
 /* ── Main content ── */
 #content { flex: 1; overflow-y: auto; background: var(--bg); }

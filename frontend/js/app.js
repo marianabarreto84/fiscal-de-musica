@@ -29,6 +29,13 @@ document.querySelectorAll('.nav-links a').forEach(a => {
   a.addEventListener('click', e => { e.preventDefault(); navigate(a.dataset.page); });
 });
 
+const sidebarEl = document.getElementById('sidebar');
+if (localStorage.getItem('sidebar-collapsed') === '1') sidebarEl?.classList.add('collapsed');
+document.getElementById('sidebar-toggle')?.addEventListener('click', () => {
+  const collapsed = sidebarEl.classList.toggle('collapsed');
+  localStorage.setItem('sidebar-collapsed', collapsed ? '1' : '0');
+});
+
 async function checkApiStatus() {
   const dot = document.querySelector('#api-status .status-dot');
   const txt = document.querySelector('#api-status .status-text');
