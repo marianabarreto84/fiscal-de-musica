@@ -20,7 +20,7 @@ Veja as regras compartilhadas em `../CLAUDE.md`. Este arquivo cobre só o que é
 
 ```bash
 poetry install
-poetry run python run.py          # roda em http://localhost:8002 com reload
+poetry run python run.py          # roda na porta definida em PORT (.env) com reload
 ```
 
 Não há suíte de testes nem linter configurados. Não invente comandos `pytest` / `ruff` — eles não rodam aqui.

@@ -9,6 +9,7 @@ if not exist ".env" (
 )
 
 poetry install --no-interaction
-echo Iniciando fiscal-de-musica em http://localhost:8002
-start "" "http://localhost:8002"
+for /f "tokens=2 delims==" %%a in ('findstr /b "PORT=" .env') do set APP_PORT=%%a
+echo Iniciando fiscal-de-musica em http://localhost:%APP_PORT%
+start "" "http://localhost:%APP_PORT%"
 poetry run python run.py

@@ -24,7 +24,8 @@ router = APIRouter()
 
 def _redirect_uri() -> str:
     # Spotify exige loopback IP (não aceita "localhost") OU HTTPS.
-    return os.getenv("SPOTIFY_REDIRECT_URI", "http://127.0.0.1:8002/api/spotify/oauth/callback")
+    from backend.config import PORT
+    return os.getenv("SPOTIFY_REDIRECT_URI", f"http://127.0.0.1:{PORT}/api/spotify/oauth/callback")
 
 
 def _get_cfg(conn, key: str) -> str | None:
