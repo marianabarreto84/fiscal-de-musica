@@ -221,3 +221,6 @@ data/
 
 # Claude Code harness (worktrees, scheduled tasks, local settings)
 .claude/
+
+# Cloudflared local config (hostname + tunnel UUID são info de deploy)
+cloudflared/config.yml

@@ -1,0 +1,7 @@
+tunnel: <uuid-do-seu-tunnel>
+credentials-file: <caminho-pro-json-de-credenciais>
+
+ingress:
+  - hostname: <seu-hostname.exemplo.com>
+    service: http://localhost:<porta-do-app>
+  - service: http_status:404

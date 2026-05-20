@@ -1054,3 +1054,75 @@ body.fade-ouvido .projeto-album-card.is-ouvido:hover {
   .settings-content { padding: 20px 16px; }
   .settings-section { max-width: 100%; }
 }
+
+/* ── Auth gate (modal de senha pra acesso público via Cloudflare Tunnel) ── */
+body.auth-locked { overflow: hidden; }
+body.auth-locked #app { filter: blur(8px) brightness(0.35); pointer-events: none; }
+#auth-gate {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.85);
+  backdrop-filter: blur(8px);
+  z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+  padding: 20px;
+}
+.auth-gate-card {
+  background: var(--bg2);
+  border: 1px solid var(--border2);
+  border-radius: 14px;
+  padding: 36px 32px;
+  width: 100%; max-width: 380px;
+  text-align: center;
+  box-shadow: 0 18px 60px rgba(0,0,0,0.6);
+}
+.auth-gate-logo {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin-bottom: 18px;
+}
+.auth-gate-logo .logo-icon { font-size: 28px; color: var(--accent); }
+.auth-gate-title {
+  font-family: var(--font-display);
+  font-size: 22px;
+  font-style: italic;
+  color: var(--text);
+}
+.auth-gate-msg {
+  color: var(--text2);
+  font-size: 13px;
+  margin-bottom: 22px;
+}
+#auth-gate-form {
+  display: flex; flex-direction: column; gap: 12px;
+}
+#auth-gate-input {
+  background: var(--bg3);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-size: 14px;
+  width: 100%;
+  outline: none;
+  transition: border-color var(--transition);
+}
+#auth-gate-input:focus { border-color: var(--accent); }
+#auth-gate-submit {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition);
+}
+#auth-gate-submit:hover { background: var(--accent2); }
+#auth-gate-submit:disabled { opacity: 0.6; cursor: not-allowed; }
+.auth-gate-error {
+  color: var(--red);
+  font-size: 12px;
+  min-height: 16px;
+  text-align: left;
+}

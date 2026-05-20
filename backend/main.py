@@ -5,7 +5,7 @@ from fastapi.responses import FileResponse
 from pathlib import Path
 
 from backend.db import init_db
-from backend.routers import lastfm, scrobbles, artistas, albums, stats, images, settings, projetos, musicas, jobs, spotify_oauth
+from backend.routers import lastfm, scrobbles, artistas, albums, stats, images, settings, projetos, musicas, jobs, spotify_oauth, auth
 
 app = FastAPI(title="Fiscal de Música")
 
@@ -27,6 +27,7 @@ app.include_router(projetos.router,  prefix="/api/projetos",  tags=["projetos"])
 app.include_router(musicas.router,   prefix="/api/musicas",   tags=["musicas"])
 app.include_router(jobs.router,      prefix="/api/jobs",      tags=["jobs"])
 app.include_router(spotify_oauth.router, prefix="/api/spotify", tags=["spotify"])
+app.include_router(auth.router,      prefix="/api/auth",      tags=["auth"])
 
 FRONTEND = Path(__file__).parent.parent / "frontend"
 app.mount("/css", StaticFiles(directory=str(FRONTEND / "css")), name="css")
